@@ -71,11 +71,26 @@ http://localhost:8000
 This traffic will be tunneled through both SSH sessions to your web service.
 
 
+DEVI AVERE UN FILE main.py NELLA DIRECTORY DOVE C'è IL FILE .sif IN CUI SCRIVI:
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+
+app = FastAPI()
+
+@app.get("/testinAPI", response_class=HTMLResponse)
+def read_root():
+    html_content = super_fancy_content
+
+    return html_content
 
 
-
-
-
-poi->  ssh -p 8822 u103038@login.lxp.lu
-
+super_fancy_content=""" <html>
+  <head>
+    <title>Benvenuto/a su Meluxina!</title>
+    </head>
+    <body>
+    <h1>Hello world! this can even be a jsonObject and removing the "response_class" param you have a REST webService</h1>
+  </body>
+</html>
+"""
 
