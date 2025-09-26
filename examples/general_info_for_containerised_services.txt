@@ -42,7 +42,8 @@ From: python:3.10
     cd /app
     exec uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ______________________________________________________________________________
-
+ATTENZIONE: IL FLAG --reload NO VA MAI USATO IN PRODUZIONE PERCHE RIFLETTE I CAMBIAMENTI DEL CODICE LIVE!!
+__________________________________________________________________________
 -allochi risorsa computazionale con salloc
 -runni il comando -> apptainer run --bind /home/users/u103038:/app test.sif
 
