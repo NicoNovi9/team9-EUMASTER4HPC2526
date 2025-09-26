@@ -1,0 +1,81 @@
+prometheous immagazzina le informazioni (ie le nostre metriche tipo quante richieste sono state sottomesse) e tramite grafana le puoi leggere via query.
+
+
+
+
+
+___
+cos'è kubernates? come si integra con apptainer?
+kubernetes è un orchestratore (gestisce) tanti container docker.. non fa al caso nostro
+
+fastAPI vs flask?
+fastAPI è asincrono di natura e si integra bene con apptainer.
+
+
+how to ssh from browser with a ui?
+
+_____
+come far partire webservice con o senza UI containerizzato su apptainer.
+
+-crei il container (file.sif) insieme alla "recipe" (file.def)
+->apptainer build test.sif test.def
+
+
+DENTRO AL test.def CI SCRIVI:
+
+	Bootstrap: docker
+From: python:3.10
+
+%environment
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+
+
+%post
+    pip install fastapi prometheus-client uvicorn numpy pandas
+
+    mkdir -p /app
+    pip install fastapi prometheus-client uvicorn numpy pandas
+
+
+%runscript
+    cd /app
+    exec uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+______________________________________________________________________________
+
+-allochi risorsa computazionale con salloc
+-runni il comando -> apptainer run --bind /home/users/u103038:/app test.sif
+
+IN LOCALE TI APRI 2 TERMINALI
+
+-Terminal 1 (SSH to Login Node with Port Forwarding):
+Run this command to forward port 8000 from your Mac to port 8000 on the Meluxina login node:
+
+
+ssh -L 8000:localhost:8000 -p 8822 u103038@login.lxp.lu 
+Keep this terminal open as it keeps the tunnel active. GIUSTO!
+------- --- --- -- -- 
+
+Terminal 2 (SSH from Login Node to Compute Node with Port Forwarding):
+->ssh meluxina  #In the Terminal window connected to the login node, open a second SSH session to the compute node with further port forwarding:
+
+->ssh -L 8000:localhost:8000 mel2066 #This forwards port 8000 from the login node to the compute node where your containerized web service is running.
+
+
+
+Access the UI:
+Now on your Mac, open a browser and go to:
+
+text
+http://localhost:8000
+This traffic will be tunneled through both SSH sessions to your web service.
+
+
+
+
+
+
+
+poi->  ssh -p 8822 u103038@login.lxp.lu
+
+
