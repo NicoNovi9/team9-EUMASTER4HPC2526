@@ -44,7 +44,7 @@ The system is built around **four main pillars**:
    - Configurable logging system via REST or file.  
    - Reads an expiration `DateTime` and a `logLevel` (eg. 0=info, 1=warning, 2=error) writte in the config file.  
    - During execution, all the logging statements are written to file while the configuration is valid.
-   (Possible future extension: logging through Prometheu/Grafana Loki)
+   (Possible future extension: logging through Prometheus/Grafana Loki)
 
 ---
 
