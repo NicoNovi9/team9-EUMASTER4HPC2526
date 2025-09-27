@@ -53,6 +53,6 @@ The system is built around **four main pillars**:
 - **Containerization**: [Apptainer](https://apptainer.org/) for portability on HPC.
 - **Web Frameworks**: [FastAPI](https://fastapi.tiangolo.com/).
 - **Benchmarking Libraries**: FAISS, Ollama + Mistral LLM.
-- **Monitoring & Logging**: Python built-in libraries (with possible extensions through Prometheus client), configuration files, and REST API.
+- **Monitoring & Logging**: Python built-in libraries (with possible extensions through Prometheus), configuration files, and REST API.
 
 ---
