@@ -40,7 +40,7 @@ The system is built around **four main pillars**:
    (Possible future extension: monitoring through Grafana)
 
 4. **Log**  
-   -  **Purpose**: Configurable logging system via REST or file.  Reads an expiration `DateTime` and a `logLevel` (eg. 0=info, 1=warning, 2=error) written in the config file.  During execution of our benchmarking services, all the custom logging statements are written to file while the configuration is valid.
+   -  **Purpose**: Configurable logging system via REST or file.  Reads an expiration `DateTime` and a `logLevel` (eg. 0=info, 1=warning, 2=error) written in the config file.  During execution of our benchmarking services, all the custom logging statements are written to a file while the configuration is valid.
     - **Input**: dateTime util logging on permanent storage ends, loggingLevel.  
    - **Output**: file with all the logging statements being present in the benchmarking services.
    (Possible future extension: logging through Prometheus/Grafana Loki)
