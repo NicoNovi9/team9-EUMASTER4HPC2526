@@ -1,5 +1,5 @@
 # team9-EUMASTER4HPC2526
-# 🧪 EUMASTER4HPC-TEAM9 – Benchmarking AI Factories
+# 🧪 Benchmarking AI Factories
 
 This project develops a **benchmarking platform** for various components of an AI ecosystem running on Meluxina.  
 The goal is to measure the performance and resource usage of *retrieval systems*, *inference engines*, and I/O operations within a microservices-based architecture.
