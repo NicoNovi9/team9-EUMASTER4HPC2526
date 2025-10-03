@@ -1,57 +1,50 @@
 # team9-EUMASTER4HPC2526
 # 🧪 Benchmarking AI Factories
 
-This project develops a **benchmarking platform** for various components of an AI ecosystem running on Meluxina.  
-The goal is to measure the performance and resource usage of *retrieval systems*, *inference engines*, and I/O operations within a microservices-based architecture.
+This project provides a flexible benchmarking framework for deploying, monitoring, and executing service-based benchmarks on **Meluxina**.  
+The system is designed to be configuration-driven (via JSON/YAML), making it possible to orchestrate services, clients, and monitoring pipelines automatically, while minimizing manual setup.  
 
 ---
 
-## 📐 Architecture
+## 📌 Project Overview
 
-The system is built around **four main pillars**:
+The benchmarking workflow is composed of several key components:
 
-1. **Server**  
-   Service that performs the actual benchmarks:
-   - **Retrieval System**  
-     - **Purpose**: Uses similarity search tools such as [FAISS](https://github.com/facebookresearch/faiss) to measure the retrieval time of *N nearest neighbors* of vectors of dimension K.  
-     - **Input**:  vector length, number of neighbors.  
-     - **Output**: execution time.
+### 1. **Entry Point (Python Program)**
+- Central control program that runs on Meluxina (does not necessarily require allocated resources).  
+- Responsibilities:
+  - Reads the configuration file (YAML/JSON).  
+  - Launches the required **services** in containers (via Apptainer). it launches the sbatch of dynamically created .sh file configurations and through pyslurm/subprocess the containers are launched.
+  - Ensures services are “up and running” before client jobs are submitted.  
+  - Starts the **monitoring service** prior to launching jobs.  
 
-   - **Inference Engine**  
-     - **Purpose**: Based on [Ollama](https://ollama.ai) + **Mistral** model executed in Apptainer.  To mitigate stochastic variability, the same prompt is repeated multiple times and the results are averaged (*Monte Carlo*).
-     - **Input**:  prompt.  
-     - **Output**: `time_to_first_token` and `tokens_generated_per_second`.
+### 2. **Services (Containerized Software)**
+- Benchmarked systems or libraries that run inside Apptainer containers.  
+- Examples:
+  - **Qdrant** (used for KNN retrieval benchmarks with FAISS).  
+  - **Ollama** (for LLM serving).  
+- Characteristics:
+  - Already implemented since the are pulled from dockerhub, ready to be containerized.  
+  - Expose APIs and generate logs automatically (`stdout` and `stderr` redirected to `.log` files) through proper launching configuration.  
 
-   - **I/O Benchmark (if enough time)**  
-     -  **Purpose**: Measures read/write times for large files.  
-     - **Input**: file size and path.  
-     - **Output**: write and read time.
+### 3. **Clients (Python Program + SLURM jobs)**
+- Python programs that interact with service endpoints.  
+- Configuration defines:
+  - Which service endpoint to query.  
+  - Parameters/payload of the requests.  
+  - Computational resources to request (CPU, GPU, memory).  
+  - Number of clients to deploy.  
+- Each client job is submitted to SLURM (`sbatch`) and executed independently.  
 
-2. **Client**  
-   -  **Purpose**: Exposes a “menu” endpoint to select and launch benchmarks.  
-   - **Input**: number of clients, services to execute, configuration, hardware resources (CPU/GPU, number of cores) where each service will run.  
-   - **Output**: `ok` if the jobs are submitted, `ko + reason` in case of failure.  
-   - (Possible future extension: orchestration with [Dask](https://www.dask.org/)).
+### 4. **Monitoring (Prometheus Service)**
+- A separate service container running **Prometheus**.  
+- Must be started **before** client jobs are submitted.  
+- Responsibilities:
+  - Collects metrics on CPU, GPU, and memory usage from all service containers.  
+  - Metrics are stored for later analysis.  
 
-3. **Monitor**  
-   -  **Purpose**: Web service showing real-time status of active jobs.  
-   - **Input**: which job to monitor (eg. retrieval, inference, I/O).  
-   - **Output**: computational resources in use (eg. GPU, CPU, memory) and possibly workload (eg. records processed).
-   (Possible future extension: monitoring through Grafana)
+### 5. **Logging**
+- Services are configured to log automatically when launched via Apptainer:  
 
-4. **Log**  
-   -  **Purpose**: Configurable logging system via REST or file.  Reads an expiration `DateTime` and a `logLevel` (eg. 0=info, 1=warning, 2=error) written in the config file.  During execution of our benchmarking services, all the custom logging statements are written to a file while the configuration is valid.
-    - **Input**: dateTime util logging on permanent storage ends, loggingLevel.  
-   - **Output**: file with all the logging statements being present in the benchmarking services.
-   (Possible future extension: logging through Prometheus/Grafana Loki)
-
----
-
-## 🏗️ Technologies (TBD, but likely:)
-
-- **Containerization**: [Apptainer](https://apptainer.org/) for portability on HPC.
-- **Web Frameworks**: [FastAPI](https://fastapi.tiangolo.com/).
-- **Benchmarking Libraries**: FAISS, Ollama + Mistral LLM.
-- **Monitoring & Logging**: Python built-in libraries (with possible extensions through Prometheus), configuration files, and REST API.
-
----
+  ```bash
+  apptainer exec ollama.sif ollama serve > ollama_out.log 2> ollama_err.log
