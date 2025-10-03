@@ -16,7 +16,8 @@ The benchmarking workflow is composed of several key components:
   - Reads the configuration file (YAML/JSON).  
   - Launches the required **services** in containers (via Apptainer). it launches the sbatch of dynamically created .sh file configurations and through pyslurm/subprocess the containers are launched.
   - Ensures services are “up and running” before client jobs are submitted.  
-  - Starts the **monitoring service** prior to launching jobs.  
+  - Starts the **monitoring service** prior to launching jobs.
+  - the entry point can be triggered by a local UI that connects to Meluxina through ssh.  
 
 ### 2. **Services (Containerized Software)**
 - Benchmarked systems or libraries that run inside Apptainer containers.  
