@@ -1,0 +1,12 @@
+{
+  "name": "team9_ssh_meluxina",
+  "version": "1.0.0",
+  "description": "Project for SSH to Meluxina",
+  "main": "index.js",
+  "scripts": {
+    "start": "node conn_melux.js"
+  },
+  "dependencies": {
+    "ssh2": "^1.11.0" 
+  }
+}
