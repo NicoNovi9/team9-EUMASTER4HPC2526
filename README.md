@@ -1,12 +1,12 @@
 # team9-EUMASTER4HPC2526
-# 🧪 Benchmarking AI Factories
+# Benchmarking AI Factories
 
 This project provides a flexible benchmarking framework for deploying, monitoring, and executing service-based benchmarks on **Meluxina**.  
 The system is designed to be configuration-driven (via JSON/YAML), making it possible to orchestrate services, clients, and monitoring pipelines automatically, while minimizing manual setup.  
 
 ---
 
-## 📌 Project Overview
+## Project Overview
 
 The benchmarking workflow is composed of several key components:
 
