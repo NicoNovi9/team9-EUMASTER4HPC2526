@@ -1,27 +1,27 @@
 {
   "job": {
-    "scenario": "unique_name",
+    "scenario": "benchmark_run_v1",
     "partition": "gpu",
-    "account": "p200981",
+    "account": "p301245",
     "resources": {
-      "nodes": 1,
-      "gpus": 1,
-      "cpus_per_task": 8,
-      "mem_gb": 32
+      "nodes": 2,
+      "gpus": 2,
+      "cpus_per_task": 16,
+      "mem_gb": 64
     },
     "workload": {
       "component": "inference",
       "service": "LLM",
-      "model": "mistral-7b-instruct",
-      "prompt_len": [128, 512],
-      "howMany": 1,
+      "model": "deepseek-6.7b",
+      "prompt_len": [256, 1024],
+      "howMany": 2,
       "computationalResources": {
         "processor": "cpu",
-        "memory": "4G"
+        "memory": "8G"
       }
     },
     "metadata": {
-      "notes": "first trial run"
+      "notes": "baseline performance test on HPC"
     }
   }
 }
