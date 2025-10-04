@@ -1,47 +1,27 @@
 {
-  "connectionParams": {
-    "privateKeyPath": "/Users/ivanalkhayat/.ssh/id_ed25519_mlux",
-    "username": "u103038"
-  },
-
-
-
-  "server": {
-    "LLM": [
-      {
-      	"howMany":1,
-        "model": "mistral",
-        "computationalResources": {
-          "processor": "cpu",
-          "memory": "4G"
-        }},
-        {
-      	"howMany":3,
-        "model": "deepseek",
-        "computationalResources": {
-          "processor": "cpu",
-          "memory": "4G"
-        }},
-        {
-        "howMany":3,
-        "model": "gpt4",
-        "computationalResources": {
-          "processor": "cpu",
-          "memory": "4G"
-        }
+  "job": {
+    "scenario": "unique_name",
+    "partition": "gpu",
+    "account": "p200981",
+    "resources": {
+      "nodes": 1,
+      "gpus": 1,
+      "cpus_per_task": 8,
+      "mem_gb": 32
+    },
+    "workload": {
+      "component": "inference",
+      "service": "LLM",
+      "model": "mistral-7b-instruct",
+      "prompt_len": [128, 512],
+      "howMany": 1,
+      "computationalResources": {
+        "processor": "cpu",
+        "memory": "4G"
       }
-
-      
-    ],
-    "RetrievalSystem": {
-    	"howMany":1,
-		"computationalResources": {
-          "processor": "cpu",
-          "memory": "4G"
-        }
-
+    },
+    "metadata": {
+      "notes": "first trial run"
     }
   }
-
-
 }
