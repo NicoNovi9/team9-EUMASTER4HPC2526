@@ -2,9 +2,36 @@ const { Client } = require('ssh2');
 const fs = require('fs');
 
 const conn = new Client();
-const envParams={//TODO CONIGURE BASED ON YOUR ENVIRONMENT
-    'privateKeyPath':'/Users/ivanalkhayat/.ssh/id_ed25519_mlux',
-    'username':'u103038',
+
+function getContextParams() {
+  const params = {};
+
+  if (__dirname.includes('ivanalkhayat')) {
+    params.privateKey = '/Users/ivanalkhayat/.ssh/id_ed25519_mlux';
+    params.username = 'u103038';
+  }
+
+  if (__dirname.includes('nicola')) {
+    params.privateKey = 'nicola path';
+    params.username = 'u10xxxx';
+  }
+   if (__dirname.includes('moa')) {
+    params.privateKey = 'moa path';
+    params.username = 'u10xxxx';
+  }
+ if (__dirname.includes('daniele')) {
+    params.privateKey = 'daniele path';
+    params.username = 'u10xxxx';
+  }
+
+  return params;
+}
+const contextParams = getContextParams();
+
+
+const envParams={
+    'privateKeyPath':contextParams.privateKey,
+    'username':contextParams.username,
     'host':'login.lxp.lu',
     'port':8822
 }
