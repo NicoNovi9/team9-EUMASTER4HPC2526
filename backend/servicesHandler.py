@@ -3,10 +3,8 @@ import subprocess
 import ollamaService
 import qdrantService
 
-
 """
-Daniele and Nicola will take care of this file, if needed (eg, adding another service for I/O).
-
+Main service dispatcher that delegates to service-specific handlers.
 """
 
 def handle_service_request(data):
@@ -19,8 +17,9 @@ def handle_service_request(data):
     print(f"Service type requested: {service_type}")
     
     if service_type == 'inference':
-        # LLM inference service (Ollama)
+        # Deploy Ollama service first
         ollamaService.setup_ollama(data)
+        
     elif service_type == 'retrieval':
         # Vector retrieval service (Qdrant)
         # qdrantService.setup_qdrant(data)

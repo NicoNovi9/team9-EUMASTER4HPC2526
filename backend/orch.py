@@ -1,8 +1,9 @@
 import sys
 import json
-
+import time
 import subprocess
 import servicesHandler
+from ollamaClient import OllamaClient
 
 """ This is the main script, server side entry point.
     It is responsible for orchestrating the deployment of the services (Ollama and Qdrant),
