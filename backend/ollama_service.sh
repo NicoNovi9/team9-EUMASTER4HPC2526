@@ -1,8 +1,4 @@
-import json
-import subprocess
-
-def setup_ollama(data):
-    job_script = f"""#!/bin/bash
+#!/bin/bash
 #SBATCH --job-name=ollama_service
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -39,13 +35,3 @@ apptainer exec --nv --env OLLAMA_HOST=0.0.0.0:11434 ollama.sif ollama pull mistr
 
 # Keep Ollama alive
 wait $OLLAMA_PID
-"""
-    
-    print("received JSON:", data) #print statements will be shown in .out file
-    with open("ollama_service.sh", "w") as f:
-        f.write(job_script)
-
-    # Submit to SLURM
-    result = subprocess.run(["sbatch", "ollama_service.sh"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-    print("SLURM submission output:", result.stdout)
-    print("SLURM submission error:", result.stderr)

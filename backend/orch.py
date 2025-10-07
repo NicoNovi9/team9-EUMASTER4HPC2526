@@ -32,8 +32,8 @@ if __name__ == "__main__":
         print(f"Error: Invalid JSON in file '{json_file_path}': {e}")
         sys.exit(1)
     
-    servicesHandler.handle_service_request(data);
-    clientsHandler.generate_clients(data['client'], data['username'])
+    servicesHandler.handle_service_request(data)
+    clientsHandler.generate_clients(data['client'])
 
 
 

@@ -1,7 +1,7 @@
 import json
 import subprocess
 
-def generate_clients(clientJSON_data, username):
+def generate_clients(clientJSON_data):
     num_clients = clientJSON_data.get("n_clients", 1)
     json_str = json.dumps(clientJSON_data)  # Convert Python object to JSON string
     escaped_json_str_JSON_DATA = json_str.replace('"', '\\"')  # Escape double quotes
@@ -23,15 +23,15 @@ def generate_clients(clientJSON_data, username):
 
 sleep 3
 module load Python
-python /home/users/{username}/llmClient.py "{escaped_json_str_JSON_DATA}\""""
+python $HOME/llmClient.py "{escaped_json_str_JSON_DATA}"
+"""
     
-
 #username will have value "u103038 in case of 'ivanalkhayat' went through in the conn_melux.js,"
     with open("llmClientsGeneration.sh", "w") as f:
         f.write(client_script_template)
     # Submit to SLURM
     for i in range(num_clients):
-        result = subprocess.run(["sbatch", "llmClientsGeneration.sh"], capture_output=True, text=True)
+        result = subprocess.run(["sbatch", "llmClientsGeneration.sh"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
 
         
     print("SLURM submission output:", result.stdout)
