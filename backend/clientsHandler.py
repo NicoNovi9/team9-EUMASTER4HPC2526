@@ -18,8 +18,8 @@ def generate_clients(clientJSON_data):
 #SBATCH --qos=default
 #SBATCH --partition=cpu
 #SBATCH --account=p200981
-#SBATCH --output=llm_client_generation.out
-#SBATCH --error=llm_client_generation.err
+#SBATCH --output=output/logs/llm_client_generation.out
+#SBATCH --error=output/logs/llm_client_generation.err
 
 sleep 3
 module load Python
@@ -27,11 +27,11 @@ python $HOME/llmClient.py "{escaped_json_str_JSON_DATA}"
 """
     
 #username will have value "u103038 in case of 'ivanalkhayat' went through in the conn_melux.js,"
-    with open("llmClientsGeneration.sh", "w") as f:
+    with open("output/scripts/llmClientsGeneration.sh", "w") as f:
         f.write(client_script_template)
     # Submit to SLURM
     for i in range(num_clients):
-        result = subprocess.run(["sbatch", "llmClientsGeneration.sh"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        result = subprocess.run(["sbatch", "output/scripts/llmClientsGeneration.sh"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
 
         
     print("SLURM submission output:", result.stdout)
