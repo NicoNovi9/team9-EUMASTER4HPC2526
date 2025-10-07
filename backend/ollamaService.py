@@ -14,7 +14,7 @@ def setup_ollama(data):
     mem_gb = infrastructure.get('mem_gb', 64)
     
     # Parametri del servizio
-    model = service.get('model', 'mistral')
+    model = service.get('model', 'llama2')
     
     job_script = f"""#!/bin/bash -l
 #SBATCH --job-name=ollama_service
@@ -40,14 +40,7 @@ fi
 
 # Start Ollama service on all interfaces
 export OLLAMA_HOST=0.0.0.0:11434
-apptainer exec --nv output/containers/ollama_latest.sif ollama serve &
-
-# Wait for service to start
-sleep 15
-
-# Try to pull the specified model (optional, may fail due to SSL)
-echo "Attempting to pull model: {model}"
-apptainer exec --nv output/containers/ollama_latest.sif ollama pull {model} || echo "Model pull failed, will download on first use"
+apptainer exec --nv output/containers/ollama_latest.sif ollama serve
 
 # Keep service alive
 wait

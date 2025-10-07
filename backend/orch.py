@@ -33,18 +33,29 @@ if __name__ == "__main__":
     
     servicesHandler.handle_service_request(data)
     
-    client = OllamaClient(model="mistral")
-    # Test connessione
+    # Test Ollama client after deployment
+    print("Testing Ollama client...")
+    time.sleep(20)  # Wait for service startup
+    
+    job = data.get('job', {})
+    service = job.get('service', {})
+    model = service.get('model', 'llama2')
+    
+    client = OllamaClient()
     if client.test_connection():
-        # Esempio di query
-        response = client.query("What is artificial intelligence?")
-        
+        print("Ollama connection successful")
+        response = client.query("What is AI?")
         if response:
-            print("\n" + "="*50)
-            print("RISPOSTA OLLAMA:")
-            print("="*50)
-            print(response.get('response', 'Nessuna risposta'))
-            print("="*50)
+            response_text = response.get('response', '')
+            print(f"Query successful: {len(response_text)} chars")
+            if len(response_text) > 0:
+                print(f"Response preview: {response_text[:100]}...")
+            else:
+                print(f"Full response: {response}")
+        else:
+            print("Query failed")
+    else:
+        print("Ollama connection failed")
 
 
 

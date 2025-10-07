@@ -11,7 +11,7 @@
     },
     "service": {
       "type": "inference",
-      "model": "mistral",
+      "model": "llama2",
       "precision": "fp16",
       "n_clients": 2,
       "n_requests_per_client": 5

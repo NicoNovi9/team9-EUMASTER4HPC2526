@@ -3,7 +3,7 @@ import subprocess
 import os
 
 class OllamaClient:
-    def __init__(self, host=None, port=11434, model="mistral"):
+    def __init__(self, host=None, port=11434, model="llama2"):
         self.host = host or self._get_ollama_ip()
         self.port = port
         self.model = model
@@ -32,15 +32,3 @@ class OllamaClient:
     def test_connection(self):
         response = self.query("Hello")
         return response is not None
-    
-    def test_connection(self):
-        """Test semplice per vedere se Ollama risponde"""
-        print(f"Testing connessione a Ollama {self.host}:{self.port}...")
-        response = self.query("Hello", stream=False)
-        
-        if response:
-            print("✅ Connessione OK!")
-            return True
-        else:
-            print("❌ Connessione fallita!")
-            return False
