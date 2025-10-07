@@ -2,7 +2,7 @@ import json
 import subprocess
 
 def setup_ollama(data):
-    job_script = f"""#!/bin/bash
+    job_script = f"""#!/bin/bash -l
 #SBATCH --job-name=ollama_service
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
