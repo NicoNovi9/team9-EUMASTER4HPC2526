@@ -13,11 +13,13 @@ The workload types that users can benchmark include:
 
 ```json
 {
+  "username": "p301245",
   "job": {
     "scenario": "benchmark_run_v1",
     "partition": "gpu",
-    "account": "p301245",
     "service": "inference",
+    "n_services": 2,
+    "numClients": 32,
     "resources": {
       "nodes": 2,
       "gpus": 2,
@@ -26,11 +28,14 @@ The workload types that users can benchmark include:
     },
     "workload": {
       "model": "deepseek-6.7b",
+      "precision": "fp16",
+      "context_length": 4096,
+      "batchSize": 8,
       "n_services": 2,
       "numClients": 32,
       "prompt_len": [256, 1024],
-      "batchSize": 8,
-      "precision": "fp16"
+      "max_tokens": 512,
+      "temperature": 0.7
     },
     "metadata": {
       "notes": "benchmark generico HPC"
