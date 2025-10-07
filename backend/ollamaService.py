@@ -2,15 +2,29 @@ import json
 import subprocess
 
 def setup_ollama(data):
+    # Estraggo parametri dalla ricetta
+    infrastructure = data.get('infrastructure', {})
+    service = data.get('service', {})
+    
+    # Parametri SLURM dalla ricetta
+    partition = infrastructure.get('partition', 'gpu')
+    time = infrastructure.get('time', '00:05:00')
+    account = infrastructure.get('account', 'p200981')
+    nodes = infrastructure.get('nodes', 1)
+    mem_gb = infrastructure.get('mem_gb', 64)
+    
+    # Parametri del servizio
+    model = service.get('model', 'mistral')
+    
     job_script = f"""#!/bin/bash -l
 #SBATCH --job-name=ollama_service
-#SBATCH --partition=gpu
+#SBATCH --partition={partition}
 #SBATCH --qos=default
-#SBATCH --time=00:40:00
-#SBATCH --account=p200981
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
+#SBATCH --time={time}
+#SBATCH --account={account}
+#SBATCH --nodes={nodes}
 #SBATCH --ntasks-per-node=1
+#SBATCH --mem={mem_gb}G
 #SBATCH --output=output/logs/ollama_service.out
 #SBATCH --error=output/logs/ollama_service.err
 
@@ -26,10 +40,23 @@ fi
 
 # Start Ollama service on all interfaces
 export OLLAMA_HOST=0.0.0.0:11434
-apptainer exec --nv output/containers/ollama_latest.sif ollama serve
+apptainer exec --nv output/containers/ollama_latest.sif ollama serve &
+
+# Wait for service to start
+sleep 15
+
+# Try to pull the specified model (optional, may fail due to SSL)
+echo "Attempting to pull model: {model}"
+apptainer exec --nv output/containers/ollama_latest.sif ollama pull {model} || echo "Model pull failed, will download on first use"
+
+# Keep service alive
+wait
 """
     
-    print("received JSON:", data) #print statements will be shown in .out file
+    # Debug logging
+    print("received JSON:", data)
+    print(f"Using infrastructure: partition={partition}, account={account}, nodes={nodes}, mem={mem_gb}GB")
+    print(f"Using service: model={model}")
     with open("output/scripts/ollama_service.sh", "w") as f:
         f.write(job_script)
 

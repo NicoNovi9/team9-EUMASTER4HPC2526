@@ -1,9 +1,7 @@
 import sys
 import json
 
-
 import subprocess
-import clientsHandler
 import servicesHandler
 
 """ This is the main script, server side entry point.

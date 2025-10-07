@@ -11,9 +11,10 @@ Daniele and Nicola will take care of this file, if needed (eg, adding another se
 
 def handle_service_request(data):
     
-    # Extract service type from workload
-    workload = data.get('job', {})
-    service_type = workload.get('service', '')
+    # Extract service type from new structure
+    job = data.get('job', {})  
+    service = job.get('service', {})
+    service_type = service.get('type', '')
     
     print(f"Service type requested: {service_type}")
     
