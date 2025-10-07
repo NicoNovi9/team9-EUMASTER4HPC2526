@@ -1,6 +1,6 @@
 import json
 import subprocess
-
+import os
 def setup_ollama(data):
     # Estraggo parametri dalla ricetta
     infrastructure = data.get('infrastructure', {})
@@ -50,6 +50,10 @@ wait
     print("received JSON:", data)
     print(f"Using infrastructure: partition={partition}, account={account}, nodes={nodes}, mem={mem_gb}GB")
     print(f"Using service: model={model}")
+    # Ensure output directories exist
+    output_dir = "output/scripts"
+    os.makedirs(output_dir, exist_ok=True)  # Will create the directory if it doesn't exist
+  
     with open("output/scripts/ollama_service.sh", "w") as f:
         f.write(job_script)
 

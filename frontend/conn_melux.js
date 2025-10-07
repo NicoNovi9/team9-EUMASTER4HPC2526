@@ -82,7 +82,7 @@ const jobScript = `#!/bin/bash -l
 #SBATCH --ntasks-per-node=32
 
 module load Python
-python /home/users/${envParams.username}/orch.py "${jsonString}"
+python /home/users/${envParams.username}/orch.py /home/users/${envParams.username}/recipe.json 
 `;
 
 
@@ -106,14 +106,14 @@ conn.on('ready', () => {
         console.log('orch.py uploaded successfully.');
       });
 //--------------------------------upload clientsHandler.py
-      sftp.fastPut('../backend/clientsHandler.py', 'clientsHandler.py', (err) => {
-        if (err) throw err;
-        console.log('clientsHandler.py uploaded successfully.');
-      });
+     // sftp.fastPut('../backend/clientsHandler.py', 'clientsHandler.py', (err) => {
+     //   if (err) throw err;
+     //   console.log('clientsHandler.py uploaded successfully.');
+     // });
 //--------------------------------upload llmClient.py
-      sftp.fastPut('../backend/llmClient.py', 'llmClient.py', (err) => {
+      sftp.fastPut('../backend/ollamaClient.py', 'ollamaClient.py', (err) => {
         if (err) throw err;
-        console.log('llmClient.py uploaded successfully.');
+        console.log('ollamaClient.py uploaded successfully.');
       });
 //--------------------------------upload serviceHandler.py
    sftp.fastPut('../backend/servicesHandler.py', 'servicesHandler.py', (err) => {
@@ -129,6 +129,11 @@ conn.on('ready', () => {
    sftp.fastPut('../backend/qdrantService.py', 'qdrantService.py', (err) => {
         if (err) throw err;
         console.log('qdrantService.py uploaded successfully.');
+      });
+      //--------------------------------upload recipe.js
+   sftp.fastPut('recipe.json', 'recipe.json', (err) => {
+        if (err) throw err;
+        console.log('recipe.json uploaded successfully.');
       });
 
       // Submit the job
