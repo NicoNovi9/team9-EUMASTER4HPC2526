@@ -1,3 +1,7 @@
 .DS_store
 backend/__pycache__/
 *.pyc
+*.err
+*.out
+*.log
+*.sif
