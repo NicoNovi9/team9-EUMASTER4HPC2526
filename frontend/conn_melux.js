@@ -115,8 +115,21 @@ conn.on('ready', () => {
         if (err) throw err;
         console.log('llmClient.py uploaded successfully.');
       });
-//--------------------------------upload retrievalClient.py
-   //TODO: daniele will develop this file
+//--------------------------------upload serviceHandler.py
+   sftp.fastPut('../backend/servicesHandler.py', 'servicesHandler.py', (err) => {
+        if (err) throw err;
+        console.log('serviceHandler.py uploaded successfully.');
+      });
+//--------------------------------upload ollamaService.py
+   sftp.fastPut('../backend/ollamaService.py', 'ollamaService.py', (err) => {
+        if (err) throw err;
+        console.log('ollamaService.py uploaded successfully.');
+      });
+//--------------------------------upload qdrantService.py
+   sftp.fastPut('../backend/qdrantService.py', 'qdrantService.py', (err) => {
+        if (err) throw err;
+        console.log('qdrantService.py uploaded successfully.');
+      });
 
       // Submit the job
       conn.exec('sbatch job.sh', (err, stream) => {
