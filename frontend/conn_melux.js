@@ -47,7 +47,11 @@ const myJson = {
   key2: 42,
 };
 
-const jsonString = JSON.stringify(myJson).replace(/"/g, '\\"'); // just escape quotes
+const recipe = fs.readFileSync('./recipe.json');
+const recipeJson = JSON.parse(recipe);
+recipeJson.username = envParams.username; // add username to the recipe
+const jsonString = JSON.stringify(recipeJson).replace(/"/g, '\\"'); // just escape quotes
+
 const jobScript = `#!/bin/bash -l
 
 #SBATCH --time=00:05:00
@@ -69,13 +73,31 @@ fs.writeFileSync('job.sh', jobScript);
 conn.on('ready', () => {
   console.log('SSH connection to Meluxina established!');
 
-  // Upload the job script via SFTP
+  // Upload the job script via SFTP and python files
   conn.sftp((err, sftp) => {
     if (err) throw err;
 
     sftp.fastPut('job.sh', 'job.sh', (err) => {
       if (err) throw err;
       console.log('Job script uploaded successfully.');
+// uploading all python files so we don't have to manually upload them to meluxina
+//--------------------------------upload orch.py
+      sftp.fastPut('../backend/orch.py', 'orch.py', (err) => {
+        if (err) throw err;
+        console.log('orch.py uploaded successfully.');
+      });
+//--------------------------------upload clientsHandler.py
+      sftp.fastPut('../backend/clientsHandler.py', 'clientsHandler.py', (err) => {
+        if (err) throw err;
+        console.log('clientsHandler.py uploaded successfully.');
+      });
+//--------------------------------upload llmClient.py
+      sftp.fastPut('../backend/llmClient.py', 'llmClient.py', (err) => {
+        if (err) throw err;
+        console.log('llmClient.py uploaded successfully.');
+      });
+//--------------------------------upload retrievalClient.py
+   //TODO: daniele will develop this file
 
       // Submit the job
       conn.exec('sbatch job.sh', (err, stream) => {

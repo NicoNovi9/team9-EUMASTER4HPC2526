@@ -3,6 +3,11 @@ import subprocess
 
 def generate_clients(clientJSON_data, username):
     num_clients = clientJSON_data.get("n_clients", 1)
+    json_str = json.dumps(clientJSON_data)  # Convert Python object to JSON string
+    escaped_json_str_JSON_DATA = json_str.replace('"', '\\"')  # Escape double quotes
+    print("escaped_json_str_JSON_DATA:", escaped_json_str_JSON_DATA)
+    json_params = json.dumps(clientJSON_data)
+
     client_script_template = f"""#!/bin/bash
 #SBATCH --job-name=llm_client_generation
 #SBATCH --nodes=1
@@ -16,8 +21,11 @@ def generate_clients(clientJSON_data, username):
 #SBATCH --output=llm_client_generation.out
 #SBATCH --error=llm_client_generation.err
 
+sleep 3
 module load Python
-python /home/users/{username}/llmClient.py {clientJSON_data}"""
+python /home/users/{username}/llmClient.py {"\""+escaped_json_str_JSON_DATA+"\""}"""
+    
+
 #username will have value "u103038 in case of 'ivanalkhayat' went through in the conn_melux.js,"
     with open("llmClientsGeneration.sh", "w") as f:
         f.write(client_script_template)

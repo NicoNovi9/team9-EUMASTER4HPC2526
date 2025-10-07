@@ -3,14 +3,22 @@ import json
 
 
 import subprocess
+import clientsHandler
 
-job_script = """#!/bin/bash
+
+
+if __name__ == "__main__":
+    print("hello from the orchestrator python")
+    json_str = sys.argv[1]
+    data = json.loads(json_str)
+
+    job_script = f"""#!/bin/bash
 #SBATCH --job-name=ollama_service
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem-per-cpu=4G
-#SBATCH --time=00:04:00
+#SBATCH --time=00:40:00
 #SBATCH --qos=default
 #SBATCH --partition=cpu
 #SBATCH --account=p200981
@@ -20,7 +28,7 @@ job_script = """#!/bin/bash
 module load Apptainer
 
 NODE_IP=$(hostname -i)
-echo $NODE_IP > /home/users/u103038/ollama_ip.txt
+echo $NODE_IP > /home/users/{data['username']}/ollama_ip.txt
 
 # Pull Ollama image if not already present
 if [ ! -f ollama.sif ]; then
@@ -28,7 +36,7 @@ if [ ! -f ollama.sif ]; then
 fi
 
 # Start Ollama service on all interfaces
-apptainer exec --env OLLAMA_HOST=0.0.0.0:11434 ollama.sif ollama serve &
+apptainer exec --nv --env OLLAMA_HOST=0.0.0.0:11434 ollama.sif ollama serve &
 
 # Capture PID
 OLLAMA_PID=$!
@@ -37,19 +45,12 @@ OLLAMA_PID=$!
 sleep 10
 
 # Preload mistral model
-apptainer exec --env OLLAMA_HOST=0.0.0.0:11434 ollama.sif ollama pull mistral
+apptainer exec --nv --env OLLAMA_HOST=0.0.0.0:11434 ollama.sif ollama pull mistral
 
 # Keep Ollama alive
 wait $OLLAMA_PID
 """
-
-
-
-
-if __name__ == "__main__":
-    print("hello from the orchestrator python")
-    json_str = sys.argv[1]
-    data = json.loads(json_str)
+    
     print("received JSON:", data) #print statements will be shown in .out file
     with open("ollama_service.sh", "w") as f:
         f.write(job_script)
@@ -58,6 +59,7 @@ if __name__ == "__main__":
     result = subprocess.run(["sbatch", "ollama_service.sh"], capture_output=True, text=True)
     print("SLURM submission output:", result.stdout)
     print("SLURM submission error:", result.stderr)
+    clientsHandler.generate_clients(data['client'], data['username'])
 
 
 
