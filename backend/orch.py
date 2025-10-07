@@ -32,7 +32,19 @@ if __name__ == "__main__":
         sys.exit(1)
     
     servicesHandler.handle_service_request(data)
-    # clientsHandler.generate_clients(data['client'])
+    
+    client = OllamaClient(model="mistral")
+    # Test connessione
+    if client.test_connection():
+        # Esempio di query
+        response = client.query("What is artificial intelligence?")
+        
+        if response:
+            print("\n" + "="*50)
+            print("RISPOSTA OLLAMA:")
+            print("="*50)
+            print(response.get('response', 'Nessuna risposta'))
+            print("="*50)
 
 
 
