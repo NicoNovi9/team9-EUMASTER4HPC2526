@@ -62,5 +62,3 @@ wait
 
     # Submit to SLURM
     result = subprocess.run(["sbatch", "output/scripts/ollama_service.sh"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-    print("SLURM submission output:", result.stdout)
-    print("SLURM submission error:", result.stderr)
