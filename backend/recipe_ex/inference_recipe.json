@@ -29,6 +29,8 @@
   },
   "client": {
     "n_clients": 2,
+    "n_requests_per_client": 5,
+    "prompt": "What is artificial intelligence?",
     "test_duration": 60,
     "request_rate": 10
   }

@@ -10,11 +10,13 @@ The workload types that users can benchmark include:
 
 ```json
 {
+  "username": "p301245",
   "job": {
     "scenario": "benchmark_run_v1",
     "partition": "gpu",
-    "account": "p301245",
     "service": "inference",
+    "n_services": 2,
+    "numClients": 32,
     "resources": {
       "nodes": 2,
       "gpus": 2,
@@ -37,14 +39,13 @@ The workload types that users can benchmark include:
     }
   },
   "client": {
-    "n_clients": 32,
+    "n_clients": 2,
+    "n_requests_per_client": 5,
+    "prompt": "What is artificial intelligence?",
     "test_duration": 60,
     "request_rate": 10
   }
 }
-
-```
-
 ```
 
 ## Notes:

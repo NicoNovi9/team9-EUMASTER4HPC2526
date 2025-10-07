@@ -5,3 +5,4 @@ backend/__pycache__/
 *.out
 *.log
 *.sif
+ollama_service.sh

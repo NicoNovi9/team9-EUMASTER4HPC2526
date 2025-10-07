@@ -1,8 +1,11 @@
-{"server":{
+{
+  "username": "p301245",
   "job": {
     "scenario": "benchmark_run_v1",
     "partition": "gpu",
-    "account": "p301245",
+    "service": "inference",
+    "n_services": 2,
+    "numClients": 32,
     "resources": {
       "nodes": 2,
       "gpus": 2,
@@ -10,22 +13,26 @@
       "mem_gb": 64
     },
     "workload": {
-      "service": "inference",
       "model": "deepseek-6.7b",
+      "precision": "fp16",
+      "context_length": 4096,
+      "batchSize": 8,
       "n_services": 2,
       "numClients": 32,
       "prompt_len": [256, 1024],
-      "batchSize": 8,
-      "precision": "fp16"
+      "max_tokens": 512,
+      "temperature": 0.7
     },
     "metadata": {
       "notes": "benchmark generico HPC"
     }
-  }},
+  },
   "client": {
-    "service":"inference",
-    "n_clients": 1,
-    "n_requests_per_client": 1,
-    "prompt": "tell me how internet was born?"
+    "service": "inference",
+    "n_clients": 2,
+    "n_requests_per_client": 5,
+    "prompt": "What is artificial intelligence?",
+    "test_duration": 60,
+    "request_rate": 10
   }
 }
