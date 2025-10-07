@@ -11,8 +11,6 @@ def getOllamaIpAddress():
 
     return ip
 
-
-
 """
 example of queryParams:
 {'service': 'inference', 'n_clients': 1, 'n_requests_per_client': 10, 'prompt': 'tell me how internet was born?'}

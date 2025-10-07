@@ -33,7 +33,7 @@ if __name__ == "__main__":
         sys.exit(1)
     
     servicesHandler.handle_service_request(data)
-    clientsHandler.generate_clients(data['client'], data['username'])
+    clientsHandler.generate_clients(data['client'])
 
 
 

@@ -26,5 +26,10 @@
     "metadata": {
       "notes": "benchmark generico HPC"
     }
+  },
+  "client": {
+    "n_clients": 2,
+    "test_duration": 60,
+    "request_rate": 10
   }
 }
