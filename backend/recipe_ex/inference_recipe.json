@@ -1,0 +1,30 @@
+{
+  "job": {
+    "scenario": "benchmark_run_v1",
+    "partition": "gpu",
+    "account": "p301245",
+    "service": "inference",
+    "n_services": 2,
+    "numClients": 32,
+    "resources": {
+      "nodes": 2,
+      "gpus": 2,
+      "cpus_per_task": 16,
+      "mem_gb": 64
+    },
+    "workload": {
+      "model": "deepseek-6.7b",
+      "precision": "fp16",
+      "context_length": 4096,
+      "batchSize": 8,
+      "n_services": 2,
+      "numClients": 32,
+      "prompt_len": [256, 1024],
+      "max_tokens": 512,
+      "temperature": 0.7
+    },
+    "metadata": {
+      "notes": "benchmark generico HPC"
+    }
+  }
+}

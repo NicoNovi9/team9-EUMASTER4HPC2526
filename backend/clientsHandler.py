@@ -23,7 +23,7 @@ def generate_clients(clientJSON_data, username):
 
 sleep 3
 module load Python
-python /home/users/{username}/llmClient.py {"\""+escaped_json_str_JSON_DATA+"\""}"""
+python /home/users/{username}/llmClient.py "{escaped_json_str_JSON_DATA}\""""
     
 
 #username will have value "u103038 in case of 'ivanalkhayat' went through in the conn_melux.js,"
