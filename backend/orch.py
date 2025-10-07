@@ -5,7 +5,10 @@ import json
 import subprocess
 import clientsHandler
 
-
+""" This is the main script, server side entry point.
+    It is responsible for orchestrating the deployment of the services (Ollama and Qdrant),
+    client generation and launch the monitoring script (Prometheus) on Meluxina.
+"""
 
 if __name__ == "__main__":
     print("hello from the orchestrator python")

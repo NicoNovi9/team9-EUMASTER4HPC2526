@@ -42,16 +42,35 @@ const sshConfig = {
   privateKey: fs.readFileSync(envParams.privateKeyPath),
 };
 
-const myJson = {
-  key1: "value1",
-  key2: 42,
-};
 
 const recipe = fs.readFileSync('./recipe.json');
 const recipeJson = JSON.parse(recipe);
 recipeJson.username = envParams.username; // add username to the recipe
 const jsonString = JSON.stringify(recipeJson).replace(/"/g, '\\"'); // just escape quotes
 
+const operation = process.argv[2];
+const job_to_cancel = process.argv[3];
+
+
+if(!operation){
+  console.log("submitting benchmarking job by default");
+  doBenchmarking();
+}
+if(operation == "squeue"){
+  console.log("submitting squeue command");
+  submitSqueue();
+}
+
+if(operation == "scancel" && job_to_cancel){
+  console.log("submitting cancel command"); 
+  submitCancel(job_to_cancel);
+}
+
+
+
+
+
+function doBenchmarking(){
 const jobScript = `#!/bin/bash -l
 
 #SBATCH --time=00:05:00
@@ -115,3 +134,44 @@ conn.on('ready', () => {
     });
   });
 }).connect(sshConfig);
+}
+
+function submitSqueue(){
+  
+  conn.on('ready', () => {
+  console.log('Connected to Meluxina for squeue!');
+  conn.exec('squeue', (err, stream) => {
+    if (err) throw err;
+
+    let output = '';
+    stream.on('close', (code, signal) => {
+      console.log('squeue output:\n' + output);
+      conn.end();
+    }).on('data', (data) => {
+      output += data.toString();
+    }).stderr.on('data', (data) => {
+      console.error('STDERR: ' + data.toString());
+    });
+  });
+}).connect(sshConfig);
+}
+function submitCancel(jobId){
+  
+  conn.on('ready', () => {
+  console.log('Connected to Meluxina for squeue!');
+  conn.exec('scancel '+jobId, (err, stream) => {
+    if (err) throw err;
+
+    let output = '';
+    stream.on('close', (code, signal) => {
+      console.log('scancel output:\n' + output);
+      conn.end();
+    }).on('data', (data) => {
+      output += data.toString();
+    }).stderr.on('data', (data) => {
+      console.error('STDERR: ' + data.toString());
+    });
+  });
+}).connect(sshConfig);
+
+}
