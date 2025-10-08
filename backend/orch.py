@@ -3,6 +3,7 @@ import json
 import time
 import subprocess
 import servicesHandler
+import os
 from ollamaClient import OllamaClient
 
 """ This is the main script, server side entry point.
@@ -31,6 +32,12 @@ if __name__ == "__main__":
         print(f"Error: Invalid JSON in file '{json_file_path}': {e}")
         sys.exit(1)
     
+    #launching prometheus if not already running
+    #the path of the cwd must end with your username (dynamically computed),username needed for squeue command
+    subprocess.run(['sbatch', 'prometheus_service.sh']) if not subprocess.run(
+    ['squeue', '-u', os.path.basename(os.path.normpath(os.getcwd())), '-n', 'prometheus_service', '-h'],
+    capture_output=True, text=True).stdout.strip() else print("Already running")
+
     servicesHandler.handle_service_request(data)
     
     # Test Ollama client after deployment

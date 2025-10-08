@@ -1,11 +1,19 @@
 const { Client } = require('ssh2');
 const express = require('express');
+const { createProxyMiddleware } = require('http-proxy-middleware');
 const fs = require('fs');
 const path = require('path');
+const net = require('net');
 
 // Global SSH connection
 let sshConnection = null;
 let isConnecting = false;
+
+// Prometheus tunnel state
+let prometheusStream = null;
+let prometheusServer = null;
+const PROMETHEUS_LOCAL_PORT = 9091; // Changed from 9090 to avoid conflicts with VSCode
+const PROMETHEUS_COMPUTE_NODE = 'mel2082'; // Update this with your compute node
 
 function getContextParams() {
   const params = {};
@@ -93,9 +101,81 @@ async function getSSHConnection() {
       console.log('SSH connection closed');
       sshConnection = null;
       isConnecting = false;
+      // Clean up Prometheus tunnel if connection closes
+      if (prometheusServer) {
+        prometheusServer.close();
+        prometheusServer = null;
+      }
     });
 
     sshConnection.connect(sshConfig);
+  });
+}
+
+// Setup SSH tunnel to Prometheus on compute node
+async function setupPrometheusTunnel() {
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Get SSH connection
+      const conn = await getSSHConnection();
+
+      // If tunnel already exists, return success
+      if (prometheusServer && prometheusServer.listening) {
+        console.log('Prometheus tunnel already active');
+        return resolve(true);
+      }
+
+      // Create local server that will forward to remote Prometheus
+      prometheusServer = net.createServer((localSocket) => {
+        console.log('Local connection received for Prometheus');
+
+        // Forward the connection through SSH to the compute node
+        conn.forwardOut(
+          '127.0.0.1',              // Source address (local on Meluxina)
+          0,                         // Source port (let SSH choose)
+          PROMETHEUS_COMPUTE_NODE,   // Destination host (compute node)
+          9090,                      // Destination port (Prometheus)
+          (err, remoteStream) => {
+            if (err) {
+              console.error('SSH forward error:', err);
+              localSocket.end();
+              return;
+            }
+
+            console.log('SSH tunnel to Prometheus established');
+
+            // Pipe data bidirectionally between local socket and remote stream
+            localSocket.pipe(remoteStream).pipe(localSocket);
+
+            // Handle errors
+            localSocket.on('error', (err) => {
+              console.error('Local socket error:', err);
+              remoteStream.end();
+            });
+
+            remoteStream.on('error', (err) => {
+              console.error('Remote stream error:', err);
+              localSocket.end();
+            });
+          }
+        );
+      });
+
+      // Listen on local port
+      prometheusServer.listen(PROMETHEUS_LOCAL_PORT, '127.0.0.1', () => {
+        console.log(`✓ Prometheus tunnel active on localhost:${PROMETHEUS_LOCAL_PORT}`);
+        resolve(true);
+      });
+
+      prometheusServer.on('error', (err) => {
+        console.error('Prometheus tunnel server error:', err);
+        reject(err);
+      });
+
+    } catch (error) {
+      console.error('Failed to setup Prometheus tunnel:', error);
+      reject(error);
+    }
   });
 }
 
@@ -178,19 +258,19 @@ python /home/users/${envParams.username}/orch.py /home/users/${envParams.usernam
       { local: '../backend/servicesHandler.py', remote: 'servicesHandler.py' },
       { local: '../backend/ollamaService.py', remote: 'ollamaService.py' },
       { local: '../backend/qdrantService.py', remote: 'qdrantService.py' },
-      { local: 'recipe.json', remote: 'recipe.json' }
+      { local: 'recipe.json', remote: 'recipe.json' },
+      { local: '../backend/prometheus_service.sh', remote: 'prometheus_service.sh' }
     ];
 
     // Upload all files
     await uploadFiles(sftp, filesToUpload);
 
     // Submit the job with --parsable flag
-const output = await execCommand(conn, 'sbatch --parsable job.sh');
-const jobId = output.trim();
-console.log('SLURM job submission finished. Job ID:', jobId);
+    const output = await execCommand(conn, 'sbatch --parsable job.sh');
+    const jobId = output.trim();
+    console.log('SLURM job submission finished. Job ID:', jobId);
 
-return { success: true, output: output.trim(), jobId: jobId };
-
+    return { success: true, output: output.trim(), jobId: jobId };
 
   } catch (error) {
     console.error('Benchmarking failed:', error);
@@ -235,6 +315,83 @@ function setupWebApp() {
     res.sendFile(path.join(__dirname, 'wizard.html'));
   });
 
+  // Prometheus monitoring endpoint
+  app.get('/monitor', async (req, res) => {
+    try {
+      // Ensure tunnel is active
+      await setupPrometheusTunnel();
+      
+      // Serve HTML page with embedded Prometheus
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Prometheus Monitoring - MeluXina</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+              font-family: Arial, sans-serif;
+              overflow: hidden;
+            }
+            .header {
+              background: #2c3e50;
+              color: white;
+              padding: 15px 20px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .header h1 {
+              font-size: 20px;
+              font-weight: normal;
+            }
+            .status {
+              display: inline-block;
+              margin-left: 20px;
+              padding: 4px 12px;
+              background: #27ae60;
+              border-radius: 12px;
+              font-size: 12px;
+            }
+            iframe { 
+              position: absolute;
+              top: 50px;
+              left: 0;
+              width: 100%; 
+              height: calc(100% - 50px);
+              border: none; 
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>
+              Prometheus Monitoring
+              <span class="status">🟢 Connected to ${PROMETHEUS_COMPUTE_NODE}</span>
+            </h1>
+          </div>
+          <iframe src="/prometheus/" sandbox="allow-same-origin allow-scripts allow-forms"></iframe>
+        </body>
+        </html>
+      `);
+    } catch (error) {
+      res.status(500).send(`
+        <h1>Error</h1>
+        <p>Failed to setup Prometheus tunnel: ${error.message}</p>
+        <p>Make sure Prometheus is running on ${PROMETHEUS_COMPUTE_NODE}:9090</p>
+      `);
+    }
+  });
+
+  // Setup Prometheus tunnel endpoint
+  app.post('/setup-tunnel', async (req, res) => {
+    try {
+      await setupPrometheusTunnel();
+      res.json({ success: true, message: 'Prometheus tunnel established' });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Benchmark endpoints
   app.post('/startbenchmark', async (req, res) => {
     try {
       console.log("Received request to start benchmark", req.body);
@@ -263,7 +420,7 @@ function setupWebApp() {
     }
   });
 
-  // Optional: Add endpoints for squeue and scancel
+  // Get queue status
   app.get('/squeue', async (req, res) => {
     try {
       const result = await submitSqueue();
@@ -273,6 +430,7 @@ function setupWebApp() {
     }
   });
 
+  // Cancel job
   app.post('/scancel/:jobId', async (req, res) => {
     try {
       const result = await submitCancel(req.params.jobId);
@@ -282,9 +440,38 @@ function setupWebApp() {
     }
   });
 
+  // Prometheus proxy - THIS MUST BE LAST
+  // Only proxy if tunnel is active
+  app.use('/prometheus', async (req, res, next) => {
+    // Check if tunnel exists, if not try to create it
+    if (!prometheusServer || !prometheusServer.listening) {
+      try {
+        await setupPrometheusTunnel();
+      } catch (error) {
+        return res.status(503).send('Prometheus tunnel not available: ' + error.message);
+      }
+    }
+    next();
+  }, createProxyMiddleware({
+    target: `http://localhost:${PROMETHEUS_LOCAL_PORT}`,
+    changeOrigin: true,
+    ws: true,
+    pathRewrite: {
+      '^/prometheus': '',
+    },
+    onError: (err, req, res) => {
+      console.error('Proxy error:', err);
+      res.status(500).send('Prometheus connection error. Tunnel may be down.');
+    },
+    onProxyReq: (proxyReq, req, res) => {
+      console.log(`Proxying ${req.method} ${req.url} -> ${PROMETHEUS_LOCAL_PORT}`);
+    }
+  }));
+
   app.listen(PORT, () => {
     console.log(`🚀 Server running at http://localhost:${PORT}`);
     console.log(`📄 Open http://localhost:${PORT} to access the wizard`);
+    console.log(`📊 Open http://localhost:${PORT}/monitor to view Prometheus`);
   });
 }
 
@@ -319,7 +506,10 @@ const job_to_cancel = process.argv[3];
 
 // Graceful shutdown on ctrl+c
 process.on('SIGINT', () => {
-  console.log('\nClosing SSH connection...');
+  console.log('\nClosing connections...');
+  if (prometheusServer) {
+    prometheusServer.close();
+  }
   if (sshConnection) {
     sshConnection.end();
   }
