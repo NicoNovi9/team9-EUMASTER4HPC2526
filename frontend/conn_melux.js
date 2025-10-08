@@ -1,7 +1,11 @@
 const { Client } = require('ssh2');
+const express = require('express');
 const fs = require('fs');
+const path = require('path');
 
-const conn = new Client();
+// Global SSH connection
+let sshConnection = null;
+let isConnecting = false;
 
 function getContextParams() {
   const params = {};
@@ -15,26 +19,29 @@ function getContextParams() {
     params.privateKey = 'nicola path';
     params.username = 'u10xxxx';
   }
-   if (__dirname.includes('moa')) {
+  
+  if (__dirname.includes('moa')) {
     params.privateKey = 'moa path';
     params.username = 'u10xxxx';
   }
- if (__dirname.includes('daniele')) {
+  
+  if (__dirname.includes('daniele')) {
     params.privateKey = 'daniele path';
     params.username = 'u10xxxx';
   }
 
   return params;
 }
+
 const contextParams = getContextParams();
 
+const envParams = {
+  'privateKeyPath': contextParams.privateKey,
+  'username': contextParams.username,
+  'host': 'login.lxp.lu',
+  'port': 8822
+};
 
-const envParams={
-    'privateKeyPath':contextParams.privateKey,
-    'username':contextParams.username,
-    'host':'login.lxp.lu',
-    'port':8822
-}
 const sshConfig = {
   host: 'login.lxp.lu',
   port: envParams.port,
@@ -42,36 +49,100 @@ const sshConfig = {
   privateKey: fs.readFileSync(envParams.privateKeyPath),
 };
 
+// Get or create SSH connection
+async function getSSHConnection() {
+  return new Promise((resolve, reject) => {
+    // If connection exists and is ready, return it
+    if (sshConnection && sshConnection._sock && sshConnection._sock.readable) {
+      return resolve(sshConnection);
+    }
 
-const recipe = fs.readFileSync('./recipe.json');
-const recipeJson = JSON.parse(recipe);
-recipeJson.username = envParams.username; // add username to the recipe
-const jsonString = JSON.stringify(recipeJson).replace(/"/g, '\\"'); // just escape quotes
+    // If already connecting, wait for it
+    if (isConnecting) {
+      const checkInterval = setInterval(() => {
+        if (sshConnection && sshConnection._sock && sshConnection._sock.readable) {
+          clearInterval(checkInterval);
+          resolve(sshConnection);
+        }
+      }, 100);
+      setTimeout(() => {
+        clearInterval(checkInterval);
+        reject(new Error('Connection timeout'));
+      }, 10000);
+      return;
+    }
 
-const operation = process.argv[2];
-const job_to_cancel = process.argv[3];
+    // Create new connection
+    isConnecting = true;
+    sshConnection = new Client();
 
+    sshConnection.on('ready', () => {
+      console.log('SSH connection to Meluxina established!');
+      isConnecting = false;
+      resolve(sshConnection);
+    });
 
-if(!operation){
-  console.log("submitting benchmarking job by default");
-  doBenchmarking();
+    sshConnection.on('error', (err) => {
+      console.error('SSH connection error:', err);
+      isConnecting = false;
+      sshConnection = null;
+      reject(err);
+    });
+
+    sshConnection.on('close', () => {
+      console.log('SSH connection closed');
+      sshConnection = null;
+      isConnecting = false;
+    });
+
+    sshConnection.connect(sshConfig);
+  });
 }
-if(operation == "squeue"){
-  console.log("submitting squeue command");
-  submitSqueue();
+
+// Upload files helper
+async function uploadFiles(sftp, files) {
+  for (const file of files) {
+    await new Promise((resolve, reject) => {
+      sftp.fastPut(file.local, file.remote, (err) => {
+        if (err) {
+          console.error(`Failed to upload ${file.local}:`, err);
+          reject(err);
+        } else {
+          console.log(`${file.remote} uploaded successfully.`);
+          resolve();
+        }
+      });
+    });
+  }
 }
 
-if(operation == "scancel" && job_to_cancel){
-  console.log("submitting cancel command"); 
-  submitCancel(job_to_cancel);
+// Execute command helper
+async function execCommand(conn, command) {
+  return new Promise((resolve, reject) => {
+    conn.exec(command, (err, stream) => {
+      if (err) return reject(err);
+
+      let output = '';
+      let errorOutput = '';
+
+      stream.on('close', () => {
+        if (errorOutput) {
+          console.error('Command error:', errorOutput);
+        }
+        resolve(output);
+      }).on('data', (data) => {
+        output += data.toString();
+        console.log('Output:', data.toString());
+      }).stderr.on('data', (data) => {
+        errorOutput += data.toString();
+        console.error('STDERR:', data.toString());
+      });
+    });
+  });
 }
 
-
-
-
-
-function doBenchmarking(){
-const jobScript = `#!/bin/bash -l
+async function doBenchmarking() {
+  const jobScript = `#!/bin/bash -l
 
 #SBATCH --time=00:05:00
 #SBATCH --qos=default
@@ -85,111 +156,172 @@ module load Python
 python /home/users/${envParams.username}/orch.py /home/users/${envParams.username}/recipe.json 
 `;
 
+  // Save job script locally
+  fs.writeFileSync('job.sh', jobScript);
 
-// Save job script locally
-fs.writeFileSync('job.sh', jobScript);
+  try {
+    const conn = await getSSHConnection();
 
-conn.on('ready', () => {
-  console.log('SSH connection to Meluxina established!');
-
-  // Upload the job script via SFTP and python files
-  conn.sftp((err, sftp) => {
-    if (err) throw err;
-
-    sftp.fastPut('job.sh', 'job.sh', (err) => {
-      if (err) throw err;
-      console.log('Job script uploaded successfully.');
-// uploading all python files so we don't have to manually upload them to meluxina
-//--------------------------------upload orch.py
-      sftp.fastPut('../backend/orch.py', 'orch.py', (err) => {
-        if (err) throw err;
-        console.log('orch.py uploaded successfully.');
-      });
-//--------------------------------upload clientsHandler.py
-     // sftp.fastPut('../backend/clientsHandler.py', 'clientsHandler.py', (err) => {
-     //   if (err) throw err;
-     //   console.log('clientsHandler.py uploaded successfully.');
-     // });
-//--------------------------------upload llmClient.py
-      sftp.fastPut('../backend/ollamaClient.py', 'ollamaClient.py', (err) => {
-        if (err) throw err;
-        console.log('ollamaClient.py uploaded successfully.');
-      });
-//--------------------------------upload serviceHandler.py
-   sftp.fastPut('../backend/servicesHandler.py', 'servicesHandler.py', (err) => {
-        if (err) throw err;
-        console.log('serviceHandler.py uploaded successfully.');
-      });
-//--------------------------------upload ollamaService.py
-   sftp.fastPut('../backend/ollamaService.py', 'ollamaService.py', (err) => {
-        if (err) throw err;
-        console.log('ollamaService.py uploaded successfully.');
-      });
-//--------------------------------upload qdrantService.py
-   sftp.fastPut('../backend/qdrantService.py', 'qdrantService.py', (err) => {
-        if (err) throw err;
-        console.log('qdrantService.py uploaded successfully.');
-      });
-      //--------------------------------upload recipe.js
-   sftp.fastPut('recipe.json', 'recipe.json', (err) => {
-        if (err) throw err;
-        console.log('recipe.json uploaded successfully.');
-      });
-
-      // Submit the job
-      conn.exec('sbatch job.sh', (err, stream) => {
-        if (err) throw err;
-
-        stream.on('close', () => {
-          console.log('SLURM job submission finished.');
-          conn.end();
-        }).on('data', (data) => {
-          console.log('SLURM output:', data.toString());
-        }).stderr.on('data', (data) => {
-          console.error('SLURM error:', data.toString());
-        });
+    // Get SFTP session
+    const sftp = await new Promise((resolve, reject) => {
+      conn.sftp((err, sftpSession) => {
+        if (err) reject(err);
+        else resolve(sftpSession);
       });
     });
-  });
-}).connect(sshConfig);
+
+    // Define files to upload
+    const filesToUpload = [
+      { local: 'job.sh', remote: 'job.sh' },
+      { local: '../backend/orch.py', remote: 'orch.py' },
+      { local: '../backend/ollamaClient.py', remote: 'ollamaClient.py' },
+      { local: '../backend/servicesHandler.py', remote: 'servicesHandler.py' },
+      { local: '../backend/ollamaService.py', remote: 'ollamaService.py' },
+      { local: '../backend/qdrantService.py', remote: 'qdrantService.py' },
+      { local: 'recipe.json', remote: 'recipe.json' }
+    ];
+
+    // Upload all files
+    await uploadFiles(sftp, filesToUpload);
+
+    // Submit the job with --parsable flag
+const output = await execCommand(conn, 'sbatch --parsable job.sh');
+const jobId = output.trim();
+console.log('SLURM job submission finished. Job ID:', jobId);
+
+return { success: true, output: output.trim(), jobId: jobId };
+
+
+  } catch (error) {
+    console.error('Benchmarking failed:', error);
+    return { success: false, error: error.message };
+  }
 }
 
-function submitSqueue(){
+async function submitSqueue() {
+  try {
+    const conn = await getSSHConnection();
+    const output = await execCommand(conn, 'squeue');
+    console.log('squeue output:\n' + output);
+    return { success: true, output: output };
+  } catch (error) {
+    console.error('squeue failed:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function submitCancel(jobId) {
+  try {
+    const conn = await getSSHConnection();
+    const output = await execCommand(conn, `scancel ${jobId}`);
+    console.log('scancel output:\n' + output);
+    return { success: true, output: output };
+  } catch (error) {
+    console.error('scancel failed:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+function setupWebApp() {
+  const PORT = 8000;
+  const app = express();
+
+  // Middleware
+  app.use(express.json());
+  app.use(express.static(__dirname));
+
+  // Serve the HTML wizard page
+  app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'wizard.html'));
+  });
+
+  app.post('/startbenchmark', async (req, res) => {
+    try {
+      console.log("Received request to start benchmark", req.body);
+      const jsonData = req.body;
+      const fileName = 'recipe.json';
+      const filePath = path.join(__dirname, fileName);
+
+      // Save JSON to local filesystem
+      fs.writeFileSync(filePath, JSON.stringify(jsonData, null, 2));
+      console.log(`✓ JSON saved locally: ${filePath}`);
+
+      // Start the benchmarking job
+      const result = await doBenchmarking();
+
+      res.json({
+        success: result.success,
+        message: result.success ? 'Benchmark job submitted successfully' : 'Failed to submit benchmark',
+        path: filePath,
+        fileName: fileName,
+        jobId: result.output || result.error
+      });
+
+    } catch (error) {
+      console.error('Error in /startbenchmark:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Optional: Add endpoints for squeue and scancel
+  app.get('/squeue', async (req, res) => {
+    try {
+      const result = await submitSqueue();
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.post('/scancel/:jobId', async (req, res) => {
+    try {
+      const result = await submitCancel(req.params.jobId);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running at http://localhost:${PORT}`);
+    console.log(`📄 Open http://localhost:${PORT} to access the wizard`);
+  });
+}
+
+// Handle command line operations
+const operation = process.argv[2];
+const job_to_cancel = process.argv[3];
+
+(async () => {
+  if (!operation) {
+    console.log("Submitting benchmarking job by default");
+    await doBenchmarking();
+    process.exit(0);
+  }
   
-  conn.on('ready', () => {
-  console.log('Connected to Meluxina for squeue!');
-  conn.exec('squeue', (err, stream) => {
-    if (err) throw err;
+  if (operation == "squeue") {
+    console.log("Submitting squeue command");
+    await submitSqueue();
+    process.exit(0);
+  }
 
-    let output = '';
-    stream.on('close', (code, signal) => {
-      console.log('squeue output:\n' + output);
-      conn.end();
-    }).on('data', (data) => {
-      output += data.toString();
-    }).stderr.on('data', (data) => {
-      console.error('STDERR: ' + data.toString());
-    });
-  });
-}).connect(sshConfig);
-}
-function submitCancel(jobId){
+  if (operation == "scancel" && job_to_cancel) {
+    console.log("Submitting cancel command");
+    await submitCancel(job_to_cancel);
+    process.exit(0);
+  }
   
-  conn.on('ready', () => {
-  console.log('Connected to Meluxina for squeue!');
-  conn.exec('scancel '+jobId, (err, stream) => {
-    if (err) throw err;
+  if (operation == "webapp") {
+    console.log("Setting up web app");
+    setupWebApp();
+  }
+})();
 
-    let output = '';
-    stream.on('close', (code, signal) => {
-      console.log('scancel output:\n' + output);
-      conn.end();
-    }).on('data', (data) => {
-      output += data.toString();
-    }).stderr.on('data', (data) => {
-      console.error('STDERR: ' + data.toString());
-    });
-  });
-}).connect(sshConfig);
-
-}
+// Graceful shutdown on ctrl+c
+process.on('SIGINT', () => {
+  console.log('\nClosing SSH connection...');
+  if (sshConnection) {
+    sshConnection.end();
+  }
+  process.exit();
+});
