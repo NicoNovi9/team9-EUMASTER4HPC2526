@@ -11,7 +11,7 @@
     </style>
 </head>
 <body>
-    <h1>Job Configuration</h1>
+    <h1 id="heading">Job Configuration</h1>
     
     <div class="wizard-step active" data-step="1">
         <h2>Step 1: Job Name</h2>
@@ -92,6 +92,7 @@ function generateConfigObject() {
 
 async function callBenchmark(config) {
     if(config === undefined) config = generateConfigObject();
+    document.getElementById('heading').textContent = 'Submitting your Job, please wait for resource allocation...';
     try {
         console.log('calling callBenchmark');
         const response = await fetch('/startbenchmark', {
@@ -101,7 +102,8 @@ async function callBenchmark(config) {
         });
         const result = await response.json();
         if (!result.success) alert('Error: ' + result.error);
-        if(result.success) alert("jobId: "+ result.jobId+" Correctly submitted!");
+        if(result.success) {alert("jobId: "+ result.jobId+" Correctly submitted!");
+        window.location.replace(result.prometheusAddress, '_blank');}
         return result;
     } catch (error) {
         alert('Network error: ' + error.message);

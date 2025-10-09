@@ -12,8 +12,45 @@ let isConnecting = false;
 // Prometheus tunnel state
 let prometheusStream = null;
 let prometheusServer = null;
-const PROMETHEUS_LOCAL_PORT = 9091; // Changed from 9090 to avoid conflicts with VSCode
-const PROMETHEUS_COMPUTE_NODE = 'mel2082'; // Update this with your compute node
+const PROMETHEUS_LOCAL_PORT = 9090; 
+let PROMETHEUS_COMPUTE_NODE = null; // Update this with your compute node
+
+
+
+async function waitForPrometheus(retries = 30, delay = 2000) {
+  const conn = await getSSHConnection();
+  
+  attempts=0;
+  if (!PROMETHEUS_COMPUTE_NODE) {
+    PROMETHEUS_COMPUTE_NODE = await getPrometheusNode();    
+  }
+  
+  for (let i = 0; i < retries; i++) {
+  
+    console.log(`[${i+1}/${retries}] Checking Prometheus...`);
+    
+    try {
+      const output = await execCommand(
+        conn, 
+        `curl -s http://${PROMETHEUS_COMPUTE_NODE}:9090/-/healthy --connect-timeout 2`
+      );
+      
+      if (output.includes('Prometheus')) {
+        console.log('✓ Prometheus is ready!');
+        return true;
+      }
+    } catch (err) {
+      // Ignore errors, keep trying
+      console.log('catch error-> Prometheus not ready yet, retrying...');
+      sleep(500);
+    }
+    
+    // Wait before next attempt
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }
+  
+  throw new Error('Prometheus did not become ready in time');
+}
 
 function getContextParams() {
   const params = {};
@@ -221,7 +258,7 @@ async function execCommand(conn, command) {
   });
 }
 
-async function doBenchmarking() {
+async function doBenchmarking(res) {
   const jobScript = `#!/bin/bash -l
 
 #SBATCH --time=00:05:00
@@ -270,12 +307,18 @@ python /home/users/${envParams.username}/orch.py /home/users/${envParams.usernam
     const jobId = output.trim();
     console.log('SLURM job submission finished. Job ID:', jobId);
 
+    //TODO CHECK IF PROMETHEUS IS RUNNING
+    await waitForPrometheus();
+    setupPrometheusTunnel()
+
     return { success: true, output: output.trim(), jobId: jobId };
 
   } catch (error) {
-    console.error('Benchmarking failed:', error);
+    console.error('doBenchmarking-Benchmarking failed:', error);
     return { success: false, error: error.message };
   }
+
+  
 }
 
 async function submitSqueue() {
@@ -391,7 +434,7 @@ function setupWebApp() {
     }
   });
 
-  // Benchmark endpoints
+  // Benchmark endpoints USED BY THE WIZARD!!!
   app.post('/startbenchmark', async (req, res) => {
     try {
       console.log("Received request to start benchmark", req.body);
@@ -404,15 +447,17 @@ function setupWebApp() {
       console.log(`✓ JSON saved locally: ${filePath}`);
 
       // Start the benchmarking job
-      const result = await doBenchmarking();
+      const result = await doBenchmarking(res);
 
       res.json({
         success: result.success,
         message: result.success ? 'Benchmark job submitted successfully' : 'Failed to submit benchmark',
         path: filePath,
         fileName: fileName,
-        jobId: result.output || result.error
+        jobId: result.output || result.error,
+        prometheusAddress: `http://localhost:${PROMETHEUS_LOCAL_PORT}`
       });
+
 
     } catch (error) {
       console.error('Error in /startbenchmark:', error);
@@ -442,7 +487,7 @@ function setupWebApp() {
 
   // Prometheus proxy - THIS MUST BE LAST
   // Only proxy if tunnel is active
-  app.use('/prometheus', async (req, res, next) => {
+  /*app.use('/prometheus', async (req, res, next) => {
     // Check if tunnel exists, if not try to create it
     if (!prometheusServer || !prometheusServer.listening) {
       try {
@@ -466,7 +511,7 @@ function setupWebApp() {
     onProxyReq: (proxyReq, req, res) => {
       console.log(`Proxying ${req.method} ${req.url} -> ${PROMETHEUS_LOCAL_PORT}`);
     }
-  }));
+  }));*/
 
   app.listen(PORT, () => {
     console.log(`🚀 Server running at http://localhost:${PORT}`);
@@ -482,7 +527,7 @@ const job_to_cancel = process.argv[3];
 (async () => {
   if (!operation) {
     console.log("Submitting benchmarking job by default");
-    await doBenchmarking();
+    await doBenchmarking(res);
     process.exit(0);
   }
   
@@ -515,3 +560,59 @@ process.on('SIGINT', () => {
   }
   process.exit();
 });
+
+// Get prometheus_service compute node from squeue
+async function getPrometheusNode(maxAttempts = 20, delayMs = 5000) {
+  console.log("prometheus getting node info") // Initial wait before first attempt
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    console.log(`[${attempt}/${maxAttempts}] Checking for prometheus_service...`);
+    
+    try {
+      const conn = await getSSHConnection();
+      
+      // Query squeue for prometheus_service job
+      const command = `squeue -u ${envParams.username} -n prometheus_service -h -o '%N'`;
+      
+      const output = await new Promise((resolve, reject) => {
+        conn.exec(command, (err, stream) => {
+          if (err) return reject(err);
+
+          let data = '';
+          
+          stream.on('close', () => {
+            resolve(data);
+          }).on('data', (chunk) => {
+            data += chunk.toString();
+          });
+        });
+      });
+      
+      const node = output.trim();
+      
+      if (node) {
+        console.log(`✓ Found prometheus_service running on node: ${node}`);
+        return node;
+      }
+      
+      // No node found, retry if attempts remaining
+      if (attempt < maxAttempts) {
+        console.log(`prometheus_service not found, retrying in ${delayMs}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+      
+    } catch (error) {
+      console.error(`Error on attempt ${attempt}:`, error.message);
+      
+      // Retry if attempts remaining
+      if (attempt < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      } else {
+        throw error;
+      }
+    }
+  }
+  
+  // All attempts failed
+  throw new Error(`No prometheus_service job found after ${maxAttempts} attempts. Please submit the job first.`);
+}
+
