@@ -34,15 +34,15 @@ if __name__ == "__main__":
     
     #launching prometheus if not already running
     #the path of the cwd must end with your username (dynamically computed),username needed for squeue command
-    subprocess.run(['sbatch', 'prometheus_service.sh']) if not subprocess.run(
-    ['squeue', '-u', os.path.basename(os.path.normpath(os.getcwd())), '-n', 'prometheus_service', '-h'],
-    capture_output=True, text=True).stdout.strip() else print("Already running")
+    # subprocess.run(['sbatch', 'prometheus_service.sh']) if not subprocess.run(
+    # ['squeue', '-u', os.path.basename(os.path.normpath(os.getcwd())), '-n', 'prometheus_service', '-h'],
+    # capture_output=True, text=True).stdout.strip() else print("Already running")
 
     servicesHandler.handle_service_request(data)
     
     # Test Ollama client after deployment
     print("Testing Ollama client...")
-    time.sleep(20)  # Wait for service startup
+    time.sleep(100)  # Wait for service startup
     
     job = data.get('job', {})
     service = job.get('service', {})

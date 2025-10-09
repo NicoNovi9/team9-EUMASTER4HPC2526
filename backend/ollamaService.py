@@ -33,17 +33,57 @@ module add Apptainer
 NODE_IP=$(hostname -i)
 echo $NODE_IP > $HOME/ollama_ip.txt
 
-# Pull Ollama image if not already present
+# Pull container if missing
 if [ ! -f output/containers/ollama_latest.sif ]; then
-    apptainer pull output/containers/ollama_latest.sif docker://ollama/ollama
+    mkdir -p output/containers
+    apptainer pull output/containers/ollama_latest.sif docker://ollama/ollama:latest
 fi
 
-# Start Ollama service on all interfaces
-export OLLAMA_HOST=0.0.0.0:11434
-apptainer exec --nv output/containers/ollama_latest.sif ollama serve
+# Setup model cache
+export OLLAMA_MODELS="${{OLLAMA_MODELS:-$HOME/.ollama/models}}"
+mkdir -p "$OLLAMA_MODELS"
 
-# Keep service alive
-wait
+# Start Ollama with mounted CA certificates to fix TLS issues
+apptainer exec --nv \\
+    --env OLLAMA_MODELS="$OLLAMA_MODELS" \\
+    --env OLLAMA_HOST=0.0.0.0:11434 \\
+    --bind "$OLLAMA_MODELS:/root/.ollama/models:rw" \\
+    --bind "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem:/usr/local/share/ca-certificates/host-ca-bundle.crt:ro" \\
+    output/containers/ollama_latest.sif \\
+    bash -c "
+        echo 'Starting Ollama server with mounted CA certificates...'
+        
+        # Copy host CA bundle to standard location and update certificates
+        cp /usr/local/share/ca-certificates/host-ca-bundle.crt /usr/local/share/ca-certificates/ || echo 'CA copy failed'
+        update-ca-certificates || echo 'CA update failed, continuing...'
+        
+        # Alternative: Set SSL_CERT_FILE environment variable
+        export SSL_CERT_FILE=/usr/local/share/ca-certificates/host-ca-bundle.crt
+        
+        # Start server
+        ollama serve &
+        OLLAMA_PID=\\$!
+        
+        # Wait for server to start
+        sleep 10
+        
+        # Now try to pull model with proper certificates
+        if [ -n '{model}' ]; then
+            echo 'Attempting to pull model {model} with mounted certificates...'
+            if ollama pull '{model}'; then
+                echo '✓ Model {model} pulled successfully!'
+            else
+                echo '✗ Model pull still failed - may need additional certificate configuration'
+            fi
+        fi
+        
+        echo 'Ollama server is ready at http://$(hostname -i):11434'
+        echo 'Available models:'
+        ollama list || echo 'Could not list models'
+        
+        # Keep server alive
+        wait \\$OLLAMA_PID
+    "
 """
     
     # Debug logging
