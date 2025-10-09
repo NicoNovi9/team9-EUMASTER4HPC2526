@@ -3,8 +3,9 @@ import subprocess
 import os
 def setup_ollama(data):
     # Estraggo parametri dalla ricetta
-    infrastructure = data.get('infrastructure', {})
-    service = data.get('service', {})
+    job = data.get('job', {})
+    infrastructure = job.get('infrastructure', {})
+    service = job.get('service', {})
     
     # Parametri SLURM dalla ricetta
     partition = infrastructure.get('partition', 'gpu')
@@ -87,7 +88,9 @@ apptainer exec --nv \\
 """
     
     # Debug logging
+    job_name = job.get('name', 'ollama_service')
     print("received JSON:", data)
+    print(f"Using job: name={job_name}")
     print(f"Using infrastructure: partition={partition}, account={account}, nodes={nodes}, mem={mem_gb}GB")
     print(f"Using service: model={model}")
     # Ensure output directories exist
