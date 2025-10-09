@@ -10,10 +10,16 @@ class OllamaClient:
     
     def _get_ollama_ip(self):
         try:
-            with open(os.path.expanduser("~/ollama_ip.txt"), "r") as f:
+            # Prima prova il nuovo percorso in backend
+            with open("output/ollama_ip.txt", "r") as f:
                 return f.read().strip()
         except FileNotFoundError:
-            return "localhost"
+            try:
+                # Fallback al vecchio percorso per compatibilità
+                with open(os.path.expanduser("~/ollama_ip.txt"), "r") as f:
+                    return f.read().strip()
+            except FileNotFoundError:
+                return "localhost"
     
     def query(self, prompt):
         url = f"http://{self.host}:{self.port}/api/generate"

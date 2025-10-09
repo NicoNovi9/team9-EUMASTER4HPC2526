@@ -6,3 +6,4 @@ backend/__pycache__/
 *.log
 *.sif
 ollama_service.sh
+output/

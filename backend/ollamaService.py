@@ -31,7 +31,7 @@ def setup_ollama(data):
 module add Apptainer
 
 NODE_IP=$(hostname -i)
-echo $NODE_IP > $HOME/ollama_ip.txt
+echo $NODE_IP > output/ollama_ip.txt
 
 # Pull container if missing
 if [ ! -f output/containers/ollama_latest.sif ]; then
@@ -39,8 +39,8 @@ if [ ! -f output/containers/ollama_latest.sif ]; then
     apptainer pull output/containers/ollama_latest.sif docker://ollama/ollama:latest
 fi
 
-# Setup model cache
-export OLLAMA_MODELS="${{OLLAMA_MODELS:-$HOME/.ollama/models}}"
+# Setup model cache in backend directory
+export OLLAMA_MODELS="$(pwd)/output/ollama_models"
 mkdir -p "$OLLAMA_MODELS"
 
 # Start Ollama with mounted CA certificates to fix TLS issues
