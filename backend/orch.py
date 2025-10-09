@@ -40,29 +40,13 @@ if __name__ == "__main__":
 
     servicesHandler.handle_service_request(data)
     
-    # Test Ollama client after deployment
-    print("Testing Ollama client...")
-    time.sleep(200)  # Wait for service startup
+    # Run benchmark based on JSON configuration
+    print("Starting benchmark...")
+    time.sleep(20)  # Wait for service startup
     
-    job = data.get('job', {})
-    service = job.get('service', {})
-    model = service.get('model', 'llama2')
-    
-    client = OllamaClient()
-    if client.test_connection():
-        print("Ollama connection successful")
-        response = client.query("What is AI?")
-        if response:
-            response_text = response.get('response', '')
-            print(f"Query successful: {len(response_text)} chars")
-            if len(response_text) > 0:
-                print(f"Response preview: {response_text[:100]}...")
-            else:
-                print(f"Full response: {response}")
-        else:
-            print("Query failed")
-    else:
-        print("Ollama connection failed")
+    # Initialize client with JSON config and run benchmark
+    client = OllamaClient(config=data)
+    client.run_benchmark()
 
 
 
