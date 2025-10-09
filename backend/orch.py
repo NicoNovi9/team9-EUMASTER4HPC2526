@@ -42,7 +42,7 @@ if __name__ == "__main__":
     
     # Test Ollama client after deployment
     print("Testing Ollama client...")
-    time.sleep(100)  # Wait for service startup
+    time.sleep(200)  # Wait for service startup
     
     job = data.get('job', {})
     service = job.get('service', {})

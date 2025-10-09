@@ -91,8 +91,9 @@ apptainer exec --nv \\
     print(f"Using infrastructure: partition={partition}, account={account}, nodes={nodes}, mem={mem_gb}GB")
     print(f"Using service: model={model}")
     # Ensure output directories exist
-    output_dir = "output/scripts"
-    os.makedirs(output_dir, exist_ok=True)  # Will create the directory if it doesn't exist
+    os.makedirs("output/scripts", exist_ok=True)
+    os.makedirs("output/logs", exist_ok=True)
+    os.makedirs("output/containers", exist_ok=True)
   
     with open("output/scripts/ollama_service.sh", "w") as f:
         f.write(job_script)
