@@ -60,6 +60,8 @@ class OllamaClient:
         # Simple benchmark - single client for now (skeleton)
         print("Running benchmark requests...")
         
+        # TODO
+        # CLIENT NEED TO BE PARALLELIZED
         for client_id in range(self.n_clients):
             print(f"Client {client_id + 1}/{self.n_clients}")
             
