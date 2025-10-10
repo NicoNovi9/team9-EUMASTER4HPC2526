@@ -29,7 +29,8 @@ def setup_ollama(data):
 #SBATCH --output=output/logs/ollama_service.out
 #SBATCH --error=output/logs/ollama_service.err
 
-module add Apptainer
+module load env/release/2024.1
+module load Apptainer
 
 NODE_IP=$(hostname -i)
 echo $NODE_IP > output/ollama_ip.txt
