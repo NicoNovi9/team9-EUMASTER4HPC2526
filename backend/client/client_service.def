@@ -2,11 +2,8 @@ Bootstrap: docker
 From: python:3.9-slim
 
 %post
-    # Install required system packages
-    apt-get update && apt-get install -y \
-        curl \
-        ca-certificates \
-        && rm -rf /var/lib/apt/lists/*
+    # Install Python packages (skip system packages to avoid permission issues)
+    echo "Skipping apt-get due to HPC restrictions, using pip only"
 
     # Install Python packages
     pip install flask requests
@@ -17,9 +14,9 @@ From: python:3.9-slim
     # Create data directory for shared files (ollama_ip.txt)
     mkdir -p /app/data
     
-    # Verify curl is available
-    which curl
-    curl --version
+    # Verify python and pip are working
+    python --version
+    pip --version
 
 %files
     client/clientService.py /app/clientService.py
