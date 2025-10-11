@@ -4,7 +4,6 @@ import time
 import subprocess
 import servicesHandler
 import os
-from ollamaClient import OllamaClient
 
 """ This is the main script, server side entry point.
     It is responsible for orchestrating the deployment of the services (Ollama and Qdrant),
@@ -40,13 +39,10 @@ if __name__ == "__main__":
 
     servicesHandler.handle_service_request(data)
     
-    # Run benchmark based on JSON configuration
-    print("Starting benchmark...")
-    time.sleep(30)  # Wait for service startup
-    
-    # Initialize client with JSON config and run benchmark
-    client = OllamaClient(config=data)
-    client.run_benchmark()
+    print("Services deployment initiated.")
+    print("Ollama server and Client REST API are being deployed on SLURM.")
+    print("Use 'python3 testClientService.py' to test the REST API when ready.")
+    print("Monitor jobs with: squeue -u $USER")
 
 
 

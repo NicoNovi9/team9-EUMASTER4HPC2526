@@ -2,6 +2,7 @@ import json
 import subprocess
 import ollamaService
 import qdrantService
+from client import clientServiceHandler
 
 """
 Main service dispatcher that delegates to service-specific handlers.
@@ -17,7 +18,7 @@ def handle_service_request(data):
     print(f"Service type requested: {service_type}")
     
     if service_type == 'inference':
-        # Deploy Ollama service first
+        # Deploy Ollama service
         ollamaService.setup_ollama(data)
         
     elif service_type == 'retrieval':
