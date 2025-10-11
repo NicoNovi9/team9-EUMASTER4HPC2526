@@ -1,0 +1,32 @@
+Bootstrap: docker
+From: python:3.9-slim
+
+%post
+    # Install Python packages (skip system packages to avoid permission issues)
+    echo "Skipping apt-get due to HPC restrictions, using pip only"
+
+    # Install Python packages
+    pip install flask requests
+
+    # Create app directory
+    mkdir -p /app
+
+    # Create data directory for shared files (ollama_ip.txt)
+    mkdir -p /app/data
+    
+    # Verify python and pip are working
+    python --version
+    pip --version
+
+%files
+    client/clientService.py /app/clientService.py
+
+%runscript
+    exec python /app/clientService.py
+
+%startscript
+    python /app/clientService.py
+
+%help
+    This container runs the Ollama Client Service REST API
+    Access the service on port 5000

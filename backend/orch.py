@@ -2,18 +2,15 @@ import sys
 import json
 import time
 import subprocess
-import servicesHandler
+import ollamaService
+from client import clientServiceHandler
 import os
-from ollamaClient import OllamaClient
 
-""" This is the main script, server side entry point.
-    It is responsible for orchestrating the deployment of the services (Ollama and Qdrant),
-    client generation and launch the monitoring script (Prometheus) on Meluxina.
+""" 
+Ollama Orchestrator - Deploy server and client services.
 """
 
 if __name__ == "__main__":
-    print("starting the orchestrator python")
-    
     if len(sys.argv) < 2:
         print("Usage: python3 orch.py <json_file_path>")
         sys.exit(1)
@@ -21,33 +18,25 @@ if __name__ == "__main__":
     json_file_path = sys.argv[1]
     
     try:
-        # Read JSON file
         with open(json_file_path, 'r') as f:
             data = json.load(f)
-        print(f"Loaded recipe from file: {json_file_path}")
+        print(f"Loaded recipe: {json_file_path}")
     except FileNotFoundError:
         print(f"Error: File '{json_file_path}' not found")
         sys.exit(1)
     except json.JSONDecodeError as e:
-        print(f"Error: Invalid JSON in file '{json_file_path}': {e}")
+        print(f"Error: Invalid JSON: {e}")
         sys.exit(1)
     
-    #launching prometheus if not already running
-    #the path of the cwd must end with your username (dynamically computed),username needed for squeue command
-    # subprocess.run(['sbatch', 'prometheus_service.sh']) if not subprocess.run(
-    # ['squeue', '-u', os.path.basename(os.path.normpath(os.getcwd())), '-n', 'prometheus_service', '-h'],
-    # capture_output=True, text=True).stdout.strip() else print("Already running")
-
-    servicesHandler.handle_service_request(data)
+    # Deploy Ollama server
+    print("Deploying Ollama server...")
+    ollamaService.setup_ollama(data)
     
-    # Run benchmark based on JSON configuration
-    print("Starting benchmark...")
-    time.sleep(30)  # Wait for service startup
+    # Wait and deploy client
+    print("Waiting 15 seconds...")
+    time.sleep(15)
     
-    # Initialize client with JSON config and run benchmark
-    client = OllamaClient(config=data)
-    client.run_benchmark()
-
-
-
-
+    print("Deploying client service...")
+    clientServiceHandler.setup_client_service(data)
+    
+    print("Deployment complete. Test with: python3 client/testClientService.py")

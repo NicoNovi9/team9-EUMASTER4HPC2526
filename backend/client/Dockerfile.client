@@ -1,0 +1,24 @@
+FROM python:3.9-slim
+
+# Install required system packages
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python packages
+RUN pip install flask
+
+# Create app directory
+WORKDIR /app
+
+# Copy application
+COPY client/clientService.py /app/
+
+# Create data directory for shared files (ollama_ip.txt)
+RUN mkdir -p /app/data
+
+# Expose port
+EXPOSE 5000
+
+# Run the application
+CMD ["python", "clientService.py"]
