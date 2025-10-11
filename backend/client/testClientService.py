@@ -81,7 +81,7 @@ def test_client_service():
         print(f"✗ Custom query failed: {e}")
         return False
     
-    print("\n🎉 All tests passed! Client service is working correctly.")
+    print("\nAll tests passed! Client service is working correctly.")
     return True
 
 if __name__ == "__main__":
