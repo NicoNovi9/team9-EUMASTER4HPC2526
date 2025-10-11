@@ -42,7 +42,7 @@ if __name__ == "__main__":
     
     # Run benchmark based on JSON configuration
     print("Starting benchmark...")
-    time.sleep(100)  # Wait for service startup
+    time.sleep(30)  # Wait for service startup
     
     # Initialize client with JSON config and run benchmark
     client = OllamaClient(config=data)
