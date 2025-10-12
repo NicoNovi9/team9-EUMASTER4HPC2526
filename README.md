@@ -1,51 +1,116 @@
 # team9-EUMASTER4HPC2526
-# Benchmarking AI Factories
 
-This project provides a flexible benchmarking framework for deploying, monitoring, and executing service-based benchmarks on **Meluxina**.  
-The system is designed to be configuration-driven (via JSON/YAML), making it possible to orchestrate services, clients, and monitoring pipelines automatically, while minimizing manual setup.  
+## Benchmarking AI Factories on Meluxina
+
+This project provides a minimal, configuration‑driven framework for benchmarking AI services (e.g., Ollama) on the Meluxina supercomputer using Apptainer and SLURM. It aims to deploy, monitor, and execute service‑based benchmarks on Meluxina with minimal manual setup.
+
+The system is configuration‑driven (JSON/YAML): it orchestrates services, clients, and optional monitoring pipelines automatically.
 
 ---
 
-## Project Overview
+## Components
 
-The benchmarking workflow is composed of several key components:
+### Orchestrator (`orch.py`)
+- Main entry point. Reads a JSON recipe and deploys both the Ollama server (on a GPU node) and the client REST API (on a CPU node) via SLURM.
+- Handles all job submission logic directly and ensures services are up before clients start.
 
-### 1. **Entry Point (Python Program)**
-- Central control program that runs on Meluxina (does not necessarily require allocated resources).  
-- Responsibilities:
-  - Reads the configuration file (YAML/JSON).  
-  - Launches the required **services** in containers (via Apptainer). it launches the sbatch of dynamically created .sh file configurations and through pyslurm/subprocess the containers are launched.
-  - Ensures services are “up and running” before client jobs are submitted.  
-  - Starts the **monitoring service** prior to launching jobs.
-  - the entry point can be triggered by a local UI that connects to Meluxina through ssh.  
+### Ollama Service
+- Runs in an Apptainer container on a GPU node.
+- Serves LLMs (e.g., mistral) via HTTP API on port 11434.
+- Logs are written to `output/logs/ollama_service.out` and `output/logs/ollama_service.err`.
 
-### 2. **Services (Containerized Software)**
-- Benchmarked systems or libraries that run inside Apptainer containers.  
-- Examples:
-  - **Qdrant** (used for KNN retrieval benchmarks with FAISS).  
-  - **Ollama** (for LLM serving).  
-- Characteristics:
-  - Already implemented since the are pulled from dockerhub, ready to be containerized.  
-  - Expose APIs and generate logs automatically (`stdout` and `stderr` redirected to `.log` files) through proper launching configuration.  
+### Client Service
+- Runs in an Apptainer container on a CPU node.
+- Exposes a Flask REST API (port 5000) for benchmarking and testing the Ollama server.
+- Main endpoints: `/health`, `/simple-test`, `/query`.
+- Logs are written to `output/logs/client_service.out` and `output/logs/client_service.err`.
 
-### 3. **Clients (Python Program + SLURM jobs)**
-- Python programs that interact with service endpoints.  
-- Configuration defines:
-  - Which service endpoint to query.  
-  - Parameters/payload of the requests.  
-  - Computational resources to request (CPU, GPU, memory).  
-  - Number of clients to deploy.  
-- Each client job is submitted to SLURM (`sbatch`) and executed independently.  
+### Services (Containerized Software)
+- Benchmarked systems or libraries run inside Apptainer containers.
+- Examples: Ollama (LLM serving), Qdrant (for KNN retrieval benchmarks with FAISS).
 
-### 4. **Monitoring (Prometheus Service)**
-- A separate service container running **Prometheus**.  
-- Must be started **before** client jobs are submitted.  
-- Responsibilities:
-  - Collects metrics on CPU, GPU, and memory usage from all service containers.  
-  - Metrics are stored for later analysis.  
+### Monitoring (optional)
+- A separate service container (e.g., Prometheus) can be integrated to collect CPU/GPU/memory metrics.
+- Should be started before client jobs to capture full run metrics.
 
-### 5. **Logging**
-- Services are configured to log automatically when launched via Apptainer:  
+### Logging
+- Services are configured to log automatically when launched via Apptainer (stdout/stderr redirected to files under `output/logs/`).
 
-  ```bash
-  apptainer exec ollama.sif ollama serve > ollama_out.log 2> ollama_err.log
+### Testing
+- Use `python3 client/testClientService.py` to verify the full stack after deployment.
+- You can also manually test endpoints with `curl` using the client service IP.
+
+---
+
+## Quickstart
+
+From the repository root:
+
+```bash
+# 1) Deploy everything (run from backend/)
+cd backend
+python3 orch.py recipe_ex/inference_recipe.json
+
+# 2) Monitor jobs
+squeue -u "$USER"
+
+# 3) Test the deployment (run from backend/)
+python3 client/testClientService.py
+```
+
+---
+
+## File Structure (essentials)
+
+```
+backend/
+├── orch.py                         # Main orchestrator script
+├── ollamaService.py                # Ollama server SLURM handler
+├── qdrantService.py                # Qdrant service handler (if used)
+├── client/                         # Client REST API components
+│   ├── clientService.py            # Flask API for benchmarking
+│   ├── clientServiceHandler.py     # SLURM handler for client
+│   ├── client_service.def          # Apptainer definition
+│   ├── testClientService.py        # Test script
+│   └── README.md                   # Client documentation
+├── output/                         # Generated files and artifacts
+│   ├── logs/                       # Service logs (*.out/*.err)
+│   ├── scripts/                    # Generated SLURM scripts
+│   ├── ollama_ip.txt               # Ollama server IP
+│   └── client_ip.txt               # Client service IP
+└── recipe_ex/                      # Example configurations
+    └── inference_recipe.json       # Sample recipe
+```
+
+---
+
+## Recipe Configuration
+
+Example `inference_recipe.json`:
+
+```json
+{
+  "job": {
+    "name": "ollama_benchmark",
+    "infrastructure": {
+      "partition": "gpu",
+      "time": "00:30:00",
+      "account": "p200981",
+      "nodes": 1,
+      "mem_gb": 32
+    },
+    "service": {
+      "type": "inference",
+      "model": "mistral"
+    }
+  }
+}
+```
+
+---
+
+## Notes
+
+- The architecture is simplified: `orch.py` directly manages both server and client deployments.
+- All services run in Apptainer containers for reproducibility and isolation.
+- The framework is minimal and easy to extend for new services or more complex benchmarks.
