@@ -38,6 +38,8 @@ The system is configuration‑driven (JSON/YAML): it orchestrates services, clie
 
 ### Testing
 - Use `python3 client/testClientService.py` to verify the full stack after deployment.
+- The test script automatically reads the model from the recipe configuration.
+- You can also specify a different model: `python3 client/testClientService.py llama2`
 - You can also manually test endpoints with `curl` using the client service IP.
 
 ---

@@ -32,10 +32,6 @@ if __name__ == "__main__":
     print("Deploying Ollama server...")
     ollamaService.setup_ollama(data)
     
-    # Wait and deploy client
-    print("Waiting 15 seconds...")
-    time.sleep(15)
-    
     print("Deploying client service...")
     clientServiceHandler.setup_client_service(data)
     

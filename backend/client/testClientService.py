@@ -49,7 +49,7 @@ def main():
         "Query test", 
         "POST", 
         f"{base_url}/query",
-        json={"prompt": "What is AI? Answer in 2 sentences.", "model": "mistral"}
+        json={"prompt": "What is AI? Answer in 2 sentences.", "model": "llama2"}
     )
     
     if result1 and result2:
