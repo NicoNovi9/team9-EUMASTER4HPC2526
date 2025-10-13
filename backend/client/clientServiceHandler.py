@@ -5,7 +5,7 @@ import subprocess
 import os
 from pathlib import Path
 
-def create_slurm_script(partition='cpu', time='00:30:00', account='p200981', mem_gb=8):
+def create_slurm_script(partition='cpu', time='00:30:00', account='p200981', mem_gb=8, model='mistral'):
     """Generate SLURM batch script content"""
     return f"""#!/bin/bash -l
 #SBATCH --job-name=ollama_client
@@ -33,8 +33,9 @@ mkdir -p data
 cp output/ollama_ip.txt data/
 
 # Start service
-echo "Starting client service on $NODE_IP:5000"
-apptainer exec --bind data:/app/data client_service.sif python /app/clientService.py &
+echo "Starting client service on $NODE_IP:5000 with model {model}"
+export DEFAULT_MODEL={model}
+apptainer exec --bind data:/app/data --env DEFAULT_MODEL={model} client_service.sif python /app/clientService.py &
 echo "$NODE_IP" > output/client_ip.txt
 wait
 """
@@ -44,12 +45,14 @@ def setup_client_service(data):
     # Extract parameters
     job = data.get('job', {})
     infra = job.get('infrastructure', {})
+    service = job.get('service', {})
     
     params = {
         'partition': infra.get('client_partition', 'cpu'),
         'time': infra.get('client_time', '00:30:00'),
         'account': infra.get('account', 'p200981'),
-        'mem_gb': infra.get('client_mem_gb', 8)
+        'mem_gb': infra.get('client_mem_gb', 8),
+        'model': service.get('model', 'mistral')
     }
     
     # Create directories
@@ -61,7 +64,7 @@ def setup_client_service(data):
     with open(script_path, "w") as f:
         f.write(create_slurm_script(**params))
     
-    print(f"Submitting client service job: partition={params['partition']}, mem={params['mem_gb']}GB")
+    print(f"Submitting client service job: partition={params['partition']}, mem={params['mem_gb']}GB, model={params['model']}")
     result = subprocess.run(
         ["sbatch", script_path],
         stdout=subprocess.PIPE,

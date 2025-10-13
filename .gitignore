@@ -7,3 +7,4 @@ backend/__pycache__/
 *.sif
 ollama_service.sh
 output/
+data/

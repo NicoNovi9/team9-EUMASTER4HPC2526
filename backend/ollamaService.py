@@ -40,8 +40,14 @@ if [ ! -f "ollama_latest.sif" ]; then
     apptainer pull docker://ollama/ollama
 fi
 
-# Avvia il servizio Ollama in background
-apptainer exec --nv ollama_latest.sif ollama serve &
+# Crea la directory per i modelli se non esiste
+mkdir -p output/ollama_models
+
+# Imposta la variabile d'ambiente per la directory dei modelli Ollama
+export OLLAMA_MODELS=$(pwd)/output/ollama_models
+
+# Avvia il servizio Ollama in background con bind mount della directory modelli
+apptainer exec --nv --bind output/ollama_models:/root/.ollama/models ollama_latest.sif ollama serve &
 OLLAMA_PID=$!
 
 # Aspetta che il servizio si avvii completamente
@@ -49,7 +55,7 @@ sleep 15
 
 # Scarica il modello specificato nel JSON
 echo "Downloading model: {model}"
-apptainer exec --nv ollama_latest.sif ollama pull {model}
+apptainer exec --nv --bind output/ollama_models:/root/.ollama/models ollama_latest.sif ollama pull {model}
 
 echo "Ollama service started with model {model} on $NODE_IP:11434"
 
@@ -68,6 +74,7 @@ wait $OLLAMA_PID
     os.makedirs("output/scripts", exist_ok=True)
     os.makedirs("output/logs", exist_ok=True)
     os.makedirs("output/containers", exist_ok=True)
+    os.makedirs("output/ollama_models", exist_ok=True)
   
     with open("output/scripts/ollama_service.sh", "w") as f:
         f.write(job_script)
