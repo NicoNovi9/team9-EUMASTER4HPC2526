@@ -26,8 +26,10 @@ class OllamaClientService:
     
     def query_ollama(self, prompt, model=None):
         """Query Ollama server with a prompt"""
-        
+        print("enerting clientService.query_ollama function")
         model = model or self.default_model
+        print("ollama host querying ip!")
+        print("ollama host is", self.ollama_host)
         url = f"http://{self.ollama_host}:{self.ollama_port}/api/generate"
         payload = {
             "model": model,
@@ -53,8 +55,10 @@ class OllamaClientService:
                 return {"error": f"HTTP {response.status_code}: {response.text}"}
                 
         except requests.exceptions.RequestException as e:
+            print("clientService request exception occurred:", e)
             return {"error": f"Request failed: {str(e)}"}
         except Exception as e:
+            print("clientService general exception occurred:", e)
             return {"error": f"Exception occurred: {str(e)}"}
 
 # Initialize service

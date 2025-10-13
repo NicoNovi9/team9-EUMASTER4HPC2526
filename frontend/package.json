@@ -7,6 +7,7 @@
     "start": "node conn_melux.js"
   },
   "dependencies": {
-    "ssh2": "^1.11.0" 
+    "http-proxy-middleware": "^3.0.5",
+    "ssh2": "^1.11.0"
   }
 }

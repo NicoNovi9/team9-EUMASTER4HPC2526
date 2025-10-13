@@ -1,38 +1,19 @@
 {
-  "username": "p301245",
   "job": {
-    "scenario": "benchmark_run_v1",
-    "partition": "gpu",
-    "service": "inference",
-    "n_services": 2,
-    "numClients": 32,
-    "resources": {
-      "nodes": 2,
-      "gpus": 2,
-      "cpus_per_task": 16,
-      "mem_gb": 64
+    "name": "ollama_inference_job",
+    "infrastructure": {
+      "partition": "gpu",
+      "account": "p200981",
+      "nodes": 1,
+      "mem_gb": 64,
+      "time": "00:05:00"
     },
-    "workload": {
-      "model": "deepseek-6.7b",
+    "service": {
+      "type": "inference",
+      "model": "llama2",
       "precision": "fp16",
-      "context_length": 4096,
-      "batchSize": 8,
-      "n_services": 2,
-      "numClients": 32,
-      "prompt_len": [256, 1024],
-      "max_tokens": 512,
-      "temperature": 0.7
-    },
-    "metadata": {
-      "notes": "benchmark generico HPC"
+      "n_clients": 2,
+      "n_requests_per_client": 5
     }
-  },
-  "client": {
-    "service": "inference",
-    "n_clients": 2,
-    "n_requests_per_client": 5,
-    "prompt": "What is artificial intelligence?",
-    "test_duration": 60,
-    "request_rate": 10
   }
 }

@@ -1,6 +1,7 @@
 import json
 import subprocess
 import os
+
 def setup_ollama(data):
     # Estraggo parametri dalla ricetta
     job = data.get('job', {})
@@ -29,19 +30,89 @@ def setup_ollama(data):
 #SBATCH --output=output/logs/ollama_service.out
 #SBATCH --error=output/logs/ollama_service.err
 
+
 module load env/release/2024.1
 module load Apptainer
 
+
 NODE_IP=$(hostname -i)
+NODE_NAME=$(hostname)
 echo $NODE_IP > output/ollama_ip.txt
 
-# Scarica il container Ollama se non esiste già
-if [ ! -f "ollama_latest.sif" ]; then
-    apptainer pull docker://ollama/ollama
+
+
+#------------
+# Register Ollama in Prometheus
+# Writes into output/prometheus_assets/ollama_targets.json ip of the node where ollama is running
+# Prometheus reads this file every 10 seconds and reaches the target automatically
+cat > output/prometheus_assets/ollama_targets.json <<EOF
+[
+  {{
+    "targets": ["${{NODE_IP}}:11434"],
+    "labels": {{
+      "job": "ollama_service",
+      "node": "${{NODE_NAME}}",
+      "service": "ollama"
+    }}
+  }}
+]
+EOF
+
+echo "✓ Registered Ollama at ${{NODE_IP}}:11434"
+
+
+
+#------------
+# START NODE EXPORTER FOR CPU/RAM/GPU MONITORING
+echo "Setting up Node Exporter for system metrics..."
+
+# Pull Node Exporter container if missing
+if [ ! -f output/containers/node_exporter.sif ]; then
+    echo "Pulling Node Exporter container..."
+    apptainer pull output/containers/node_exporter.sif docker://prom/node-exporter:latest
 fi
 
+# Start Node Exporter in background
+apptainer run \\
+  --bind /proc:/host/proc:ro \\
+  --bind /sys:/host/sys:ro \\
+  output/containers/node_exporter.sif \\
+  --path.procfs=/host/proc \\
+  --path.sysfs=/host/sys \\
+  --web.listen-address=":9100" &
+
+NODE_EXPORTER_PID=$!
+echo "Node Exporter started with PID: $NODE_EXPORTER_PID"
+
+# Register Node Exporter in Prometheus
+cat > output/prometheus_assets/node_targets.json <<EOF
+[
+  {{
+    "targets": ["${{NODE_IP}}:9100"],
+    "labels": {{
+      "job": "node_exporter",
+      "node": "${{NODE_NAME}}"
+    }}
+  }}
+]
+EOF
+
+echo "✓ Node Exporter started on ${{NODE_IP}}:9100"
+# END NODE EXPORTER SETUP
+#------------
+
+
+
+#-------------
+# Pull Ollama container if missing
+if [ ! -f output/containers/ollama_latest.sif ]; then
+    mkdir -p output/containers
+    apptainer pull output/containers/ollama_latest.sif docker://ollama/ollama:latest
+fi
+
+
 # Avvia il servizio Ollama in background
-apptainer exec --nv ollama_latest.sif ollama serve &
+apptainer exec --nv output/containers/ollama_latest.sif ollama serve &
 OLLAMA_PID=$!
 
 # Aspetta che il servizio si avvii completamente
@@ -49,7 +120,7 @@ sleep 15
 
 # Scarica il modello specificato nel JSON
 echo "Downloading model: {model}"
-apptainer exec --nv ollama_latest.sif ollama pull {model}
+apptainer exec --nv output/containers/ollama_latest.sif ollama pull {model}
 
 echo "Ollama service started with model {model} on $NODE_IP:11434"
 
@@ -64,6 +135,7 @@ wait $OLLAMA_PID
     print(f"Using job: name={job_name}")
     print(f"Using infrastructure: partition={partition}, account={account}, nodes={nodes}, mem={mem_gb}GB")
     print(f"Using service: model={model}")
+    
     # Ensure output directories exist
     os.makedirs("output/scripts", exist_ok=True)
     os.makedirs("output/logs", exist_ok=True)
@@ -73,4 +145,15 @@ wait $OLLAMA_PID
         f.write(job_script)
 
     # Submit to SLURM
-    result = subprocess.run(["sbatch", "output/scripts/ollama_service.sh"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    result = subprocess.run(
+        ["sbatch", "output/scripts/ollama_service.sh"], 
+        stdout=subprocess.PIPE, 
+        stderr=subprocess.PIPE, 
+        universal_newlines=True
+    )
+    
+    print(f"SLURM submission output: {result.stdout}")
+    if result.stderr:
+        print(f"SLURM submission errors: {result.stderr}")
+    
+    return result
