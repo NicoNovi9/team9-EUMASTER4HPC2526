@@ -218,6 +218,15 @@ async function setupPrometheusTunnel() {
 
 // Upload files helper
 async function uploadFiles(sftp, files) {
+//CREATE FIRST THE DIRECTORIES
+
+const remoteDir = '/home/users/' + envParams.username + '/client';
+const dirExists = await sftp.exists(remoteDir);
+
+if (!dirExists) {
+    await sftp.mkdir(remoteDir, true);
+}
+//THEN UPLOAD THE FILES
   for (const file of files) {
     await new Promise((resolve, reject) => {
       sftp.fastPut(file.local, file.remote, (err) => {
@@ -279,6 +288,8 @@ python /home/users/${envParams.username}/orch.py /home/users/${envParams.usernam
   try {
     const conn = await getSSHConnection();
 
+    conn.sftp
+
     // Get SFTP session
     const sftp = await new Promise((resolve, reject) => {
       conn.sftp((err, sftpSession) => {
@@ -291,11 +302,15 @@ python /home/users/${envParams.username}/orch.py /home/users/${envParams.usernam
     const filesToUpload = [
       { local: 'job.sh', remote: 'job.sh' },
       { local: '../backend/orch.py', remote: 'orch.py' },
-      { local: '../backend/ollamaClient.py', remote: 'ollamaClient.py' },
-      { local: '../backend/servicesHandler.py', remote: 'servicesHandler.py' },
+      { local: '../backend/client/clientService.py', remote: 'client/clientService.py' },
+      { local: '../backend/client/clientServiceHandler.py', remote: 'client/clientServiceHandler.py' },
+      { local: '../backend/client/testClientService.py', remote: 'client/testClientService.py' },
       { local: '../backend/ollamaService.py', remote: 'ollamaService.py' },
       { local: '../backend/qdrantService.py', remote: 'qdrantService.py' },
       { local: 'recipe.json', remote: 'recipe.json' },
+      { local: '../backend/pushgateway_service.sh', remote: 'pushgateway_service.sh' },
+      { local: '../backend/client/client_service.def', remote: 'client/client_service.def' },
+
       { local: '../backend/prometheus_service.sh', remote: 'prometheus_service.sh' }
     ];
 
@@ -349,7 +364,9 @@ function setupWebApp() {
   const PORT = 8000;
   const app = express();
 
+
   // Middleware
+
   app.use(express.json());
   app.use(express.static(__dirname));
 
@@ -513,10 +530,13 @@ function setupWebApp() {
     }
   }));*/
 
+  //kills any process using the port before starting the server
+  require('child_process').execSync(`lsof -ti:${PORT} | xargs kill -9 2>/dev/null || true`);
+
   app.listen(PORT, () => {
     console.log(`🚀 Server running at http://localhost:${PORT}`);
     console.log(`📄 Open http://localhost:${PORT} to access the wizard`);
-    console.log(`📊 Open http://localhost:${PORT}/monitor to view Prometheus`);
+    console.log(`📊 Open http://localhost:${PORT}/monitor to view Prometheus USELESS`);
   });
 }
 
@@ -527,7 +547,7 @@ const job_to_cancel = process.argv[3];
 (async () => {
   if (!operation) {
     console.log("Submitting benchmarking job by default");
-    await doBenchmarking(res);
+    await doBenchmarking();
     process.exit(0);
   }
   
@@ -562,7 +582,7 @@ process.on('SIGINT', () => {
 });
 
 // Get prometheus_service compute node from squeue
-async function getPrometheusNode(maxAttempts = 20, delayMs = 5000) {
+async function getPrometheusNode(maxAttempts = 100, delayMs = 2000) {
   console.log("prometheus getting node info") // Initial wait before first attempt
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     console.log(`[${attempt}/${maxAttempts}] Checking for prometheus_service...`);
