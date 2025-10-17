@@ -18,7 +18,7 @@ def setup_ollama(data):
     # Parametri del servizio
     model = service.get('model', 'llama2')
     
-    job_script = job_script = f"""#!/bin/bash -l
+    job_script = f"""#!/bin/bash -l
 #SBATCH --job-name=ollama_service
 #SBATCH --partition={partition}
 #SBATCH --qos=default
@@ -30,21 +30,15 @@ def setup_ollama(data):
 #SBATCH --output=output/logs/ollama_service.out
 #SBATCH --error=output/logs/ollama_service.err
 
-
 module load env/release/2024.1
 module load Apptainer
-
 
 NODE_IP=$(hostname -i)
 NODE_NAME=$(hostname)
 echo $NODE_IP > output/ollama_ip.txt
 
-
-
 #------------
 # Register Ollama in Prometheus
-# Writes into output/prometheus_assets/ollama_targets.json ip of the node where ollama is running
-# Prometheus reads this file every 10 seconds and reaches the target automatically
 cat > output/prometheus_assets/ollama_targets.json <<EOF
 [
   {{
@@ -57,34 +51,27 @@ cat > output/prometheus_assets/ollama_targets.json <<EOF
   }}
 ]
 EOF
-
 echo "✓ Registered Ollama at ${{NODE_IP}}:11434"
 
-
-
 #------------
-# START NODE EXPORTER FOR CPU/RAM/GPU MONITORING
+# START NODE EXPORTER FOR SYSTEM METRICS
 echo "Setting up Node Exporter for system metrics..."
-
-# Pull Node Exporter container if missing
 if [ ! -f output/containers/node_exporter.sif ]; then
     echo "Pulling Node Exporter container..."
     apptainer pull output/containers/node_exporter.sif docker://prom/node-exporter:latest
 fi
-
-# Start Node Exporter in background
 apptainer run \\
   --bind /proc:/host/proc:ro \\
   --bind /sys:/host/sys:ro \\
   output/containers/node_exporter.sif \\
   --path.procfs=/host/proc \\
   --path.sysfs=/host/sys \\
+    --collector.cgroups \
+      --collector.processes \
   --web.listen-address=":9100" &
-
 NODE_EXPORTER_PID=$!
 echo "Node Exporter started with PID: $NODE_EXPORTER_PID"
 
-# Register Node Exporter in Prometheus
 cat > output/prometheus_assets/node_targets.json <<EOF
 [
   {{
@@ -96,20 +83,14 @@ cat > output/prometheus_assets/node_targets.json <<EOF
   }}
 ]
 EOF
-
 echo "✓ Node Exporter started on ${{NODE_IP}}:9100"
-# END NODE EXPORTER SETUP
-#------------
 
 
-
-#-------------
 # Pull Ollama container if missing
 if [ ! -f output/containers/ollama_latest.sif ]; then
     mkdir -p output/containers
     apptainer pull output/containers/ollama_latest.sif docker://ollama/ollama:latest
 fi
-
 
 # Avvia il servizio Ollama in background
 apptainer exec --nv output/containers/ollama_latest.sif ollama serve &
@@ -126,8 +107,8 @@ echo "Ollama service started with model {model} on $NODE_IP:11434"
 
 # Mantieni il servizio attivo
 wait $OLLAMA_PID
-
 """
+
     
     # Debug logging
     job_name = job.get('name', 'ollama_service')
