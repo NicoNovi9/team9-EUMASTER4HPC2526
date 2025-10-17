@@ -72,7 +72,7 @@ def prepare_monitoring():
             print("Failed to submit pushgateway job")
             return  # Optional: fail or continue
 
-        # Wait until pushgateway job is running
+        # waiting until pushgateway job is in state "RUNNING", NEEDED SO THAT PUSHGATEWAY IS UP BEFORE CLIENTS TRY TO PUSH METRICS
         print("Waiting for Pushgateway to enter RUNNING state...")
         while True:
             squeue_output = subprocess.run(
@@ -93,7 +93,7 @@ def prepare_monitoring():
     if prometheus_running:
         print("Prometheus job already running")
     else:
-        # No dependencies, just submit!
+        # submit Prometheus as a normal job, not as a dependency of pushgateway!
         prom_submit = subprocess.run(['sbatch', 'prometheus_service.sh'],
                                     capture_output=True, text=True)
         print(prom_submit.stdout.strip())
@@ -130,7 +130,7 @@ if __name__ == "__main__":
     clientServiceHandler.setup_client_service(data)
     #todo substitute with the correct json parsing
 
-    #testClientService.test_client_service()
+    # querying ollama by testClientService
     print("Deployment complete. Test with: python3 client/testClientService.py")
     subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", "idna", "charset_normalizer"])
     for i in range(30):

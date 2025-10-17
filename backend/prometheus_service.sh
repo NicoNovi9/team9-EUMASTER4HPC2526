@@ -39,15 +39,8 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
-  # Ollama containers - reads from file JSON
-  - job_name: 'ollama_service'
-    file_sd_configs:
-      - files:
-          - '/prometheus/prometheus_assets/ollama_targets.json'
-        refresh_interval: 10s
-    scrape_interval: 10s
 
-  # Node Exporter for system metrics
+  # Node Exporter for system hardware metrics
   - job_name: 'node_exporter'
     file_sd_configs:
       - files:

@@ -38,24 +38,9 @@ NODE_NAME=$(hostname)
 echo $NODE_IP > output/ollama_ip.txt
 
 #------------
-# Register Ollama in Prometheus
-cat > output/prometheus_assets/ollama_targets.json <<EOF
-[
-  {{
-    "targets": ["${{NODE_IP}}:11434"],
-    "labels": {{
-      "job": "ollama_service",
-      "node": "${{NODE_NAME}}",
-      "service": "ollama"
-    }}
-  }}
-]
-EOF
-echo "✓ Registered Ollama at ${{NODE_IP}}:11434"
 
-#------------
-# START NODE EXPORTER FOR SYSTEM METRICS
-echo "Setting up Node Exporter for system metrics..."
+# START NODE EXPORTER FOR Hardware METRICS
+echo "Setting up Node Exporter for hardware metrics..."
 if [ ! -f output/containers/node_exporter.sif ]; then
     echo "Pulling Node Exporter container..."
     apptainer pull output/containers/node_exporter.sif docker://prom/node-exporter:latest
