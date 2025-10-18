@@ -1,41 +1,6 @@
 import sys
 import site
 import subprocess
-#needed to fix the error with the "request" library that needs to be installed with dependent libraries
-def install_and_prepare_packages(packages):
-    try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--user"] + packages)
-        # Add user site-packages to sys.path to enable immediate imports
-        site.addsitedir(site.getusersitepackages())
-        print(f"Successfully installed and configured: {', '.join(packages)}")
-    except subprocess.CalledProcessError as e:
-        print(f"Failed to install packages: {e}")
-
-required_packages = [
-    "idna",
-    "charset_normalizer",
-    "certifi",
-    "python_dateutil",
-    "appdirs",
-    "numpy",
-    "scipy",
-    "tomlkit",
-    "cryptography",
-    "flask"
-]
-
-install_and_prepare_packages(required_packages)
-
-# Now you can safely import the packages in your script
-import idna
-import charset_normalizer
-import certifi
-import dateutil
-import appdirs
-import numpy
-import scipy
-import tomlkit
-import cryptography
 import os
 import json
 import time
