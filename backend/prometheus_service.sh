@@ -86,11 +86,13 @@ fi
 echo "Starting Prometheus..."
 apptainer exec \
   --bind prometheus.yml:/etc/prometheus/prometheus.yml:ro \
-  --bind $(pwd)/output:/prometheus:ro \
+  --bind $(pwd)/output:/prometheus \
   output/containers/prometheus.sif \
   prometheus \
   --config.file=/etc/prometheus/prometheus.yml \
   --web.listen-address=0.0.0.0:9090 \
+  --storage.tsdb.path=/prometheus \
+  --storage.tsdb.retention.time=30d \
   --web.enable-lifecycle &
 
 PROMETHEUS_PID=$!
