@@ -4,6 +4,7 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const fs = require('fs');
 const path = require('path');
 const net = require('net');
+const { get } = require('http');
 
 // Global SSH connection
 let sshConnection = null;
@@ -12,17 +13,21 @@ let isConnecting = false;
 // Prometheus tunnel state
 let prometheusStream = null;
 let prometheusServer = null;
-const PROMETHEUS_LOCAL_PORT = 9090; 
-let PROMETHEUS_COMPUTE_NODE = null; // Update this with your compute node
-
+const GRAFANA_LOCAL_PORT = 3000; 
+// the monitoring compute node where prometheus AND grafana are running
+let MONITORING_COMPUTE_NODE = null; // Update this with your compute node
+let IP_COMPUTE_NODE = null; //IP of the compute node running prometheus, MAYBE USELESS
+let OLLAMA_SERVICE_IP = null; // IP of the compute node running ollama_service
+let OLLAMA_JOB_ID;
+let OLLAMA_NODE;
 
 
 async function waitForPrometheus(retries = 30, delay = 2000) {
   const conn = await getSSHConnection();
   
   attempts=0;
-  if (!PROMETHEUS_COMPUTE_NODE) {
-    PROMETHEUS_COMPUTE_NODE = await getPrometheusNode();    
+  if (!MONITORING_COMPUTE_NODE) {
+    MONITORING_COMPUTE_NODE = await getPrometheusNode();    //todo decouple getting prometheus node and ollama info!! too messy
   }
   
   for (let i = 0; i < retries; i++) {
@@ -32,12 +37,14 @@ async function waitForPrometheus(retries = 30, delay = 2000) {
     try {
       const output = await execCommand(
         conn, 
-        `curl -s http://${PROMETHEUS_COMPUTE_NODE}:9090/-/healthy --connect-timeout 2`
+        `curl -s http://${MONITORING_COMPUTE_NODE}:9090/-/healthy --connect-timeout 2`
       );
       
       if (output.includes('Prometheus')) {
         console.log('✓ Prometheus is ready!');
         return true;
+      }else{
+        console.log('Prometheus not ready yet, retrying...');
       }
     } catch (err) {
       // Ignore errors, keep trying
@@ -149,8 +156,8 @@ async function getSSHConnection() {
   });
 }
 
-// Setup SSH tunnel to Prometheus on compute node
-async function setupPrometheusTunnel() {
+// Setup SSH tunnel to Grafana on compute node
+async function setupGrafanaTunnel() {
   return new Promise(async (resolve, reject) => {
     try {
       // Get SSH connection
@@ -170,8 +177,8 @@ async function setupPrometheusTunnel() {
         conn.forwardOut(
           '127.0.0.1',              // Source address (local on Meluxina)
           0,                         // Source port (let SSH choose)
-          PROMETHEUS_COMPUTE_NODE,   // Destination host (compute node)
-          9090,                      // Destination port (Prometheus)
+          MONITORING_COMPUTE_NODE,   // Destination host (compute node)
+          GRAFANA_LOCAL_PORT,                      // Destination port (Grafana)
           (err, remoteStream) => {
             if (err) {
               console.error('SSH forward error:', err);
@@ -179,7 +186,7 @@ async function setupPrometheusTunnel() {
               return;
             }
 
-            console.log('SSH tunnel to Prometheus established');
+            console.log('SSH tunnel to grafana established');
 
             // Pipe data bidirectionally between local socket and remote stream
             localSocket.pipe(remoteStream).pipe(localSocket);
@@ -199,8 +206,8 @@ async function setupPrometheusTunnel() {
       });
 
       // Listen on local port
-      prometheusServer.listen(PROMETHEUS_LOCAL_PORT, '127.0.0.1', () => {
-        console.log(`✓ Prometheus tunnel active on localhost:${PROMETHEUS_LOCAL_PORT}`);
+      prometheusServer.listen(GRAFANA_LOCAL_PORT, '127.0.0.1', () => {
+        console.log(`✓ Prometheus tunnel active on localhost:${GRAFANA_LOCAL_PORT}`);
         resolve(true);
       });
 
@@ -262,6 +269,7 @@ async function execCommand(conn, command) {
       }).stderr.on('data', (data) => {
         errorOutput += data.toString();
         console.error('STDERR:', data.toString());
+        console.error('the command was->'+command);
       });
     });
   });
@@ -310,8 +318,7 @@ python /home/users/${envParams.username}/orch.py /home/users/${envParams.usernam
       { local: 'recipe.json', remote: 'recipe.json' },
       { local: '../backend/pushgateway_service.sh', remote: 'pushgateway_service.sh' },
       { local: '../backend/client/client_service.def', remote: 'client/client_service.def' },
-
-      { local: '../backend/prometheus_service.sh', remote: 'prometheus_service.sh' }
+      { local: '../backend/monitoring_stack.sh', remote: 'monitoring_stack.sh' }
     ];
 
     // Upload all files
@@ -324,7 +331,9 @@ python /home/users/${envParams.username}/orch.py /home/users/${envParams.usernam
 
     //TODO CHECK IF PROMETHEUS IS RUNNING
     await waitForPrometheus();
-    setupPrometheusTunnel()
+    ({ jobID: OLLAMA_JOB_ID, ip: OLLAMA_SERVICE_IP, node: OLLAMA_NODE } = await getOllamaServiceInfo(conn, envParams.username));
+
+    setupGrafanaTunnel()
 
     return { success: true, output: output.trim(), jobId: jobId };
 
@@ -379,7 +388,7 @@ function setupWebApp() {
   app.get('/monitor', async (req, res) => {
     try {
       // Ensure tunnel is active
-      await setupPrometheusTunnel();
+      await setupGrafanaTunnel();
       
       // Serve HTML page with embedded Prometheus
       res.send(`
@@ -425,7 +434,7 @@ function setupWebApp() {
           <div class="header">
             <h1>
               Prometheus Monitoring
-              <span class="status">🟢 Connected to ${PROMETHEUS_COMPUTE_NODE}</span>
+              <span class="status">🟢 Connected to ${MONITORING_COMPUTE_NODE}</span>
             </h1>
           </div>
           <iframe src="/prometheus/" sandbox="allow-same-origin allow-scripts allow-forms"></iframe>
@@ -436,7 +445,7 @@ function setupWebApp() {
       res.status(500).send(`
         <h1>Error</h1>
         <p>Failed to setup Prometheus tunnel: ${error.message}</p>
-        <p>Make sure Prometheus is running on ${PROMETHEUS_COMPUTE_NODE}:9090</p>
+        <p>Make sure Prometheus is running on ${MONITORING_COMPUTE_NODE}:9090</p>
       `);
     }
   });
@@ -444,7 +453,7 @@ function setupWebApp() {
   // Setup Prometheus tunnel endpoint
   app.post('/setup-tunnel', async (req, res) => {
     try {
-      await setupPrometheusTunnel();
+      await setupGrafanaTunnel();
       res.json({ success: true, message: 'Prometheus tunnel established' });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });
@@ -472,7 +481,10 @@ function setupWebApp() {
         path: filePath,
         fileName: fileName,
         jobId: result.output || result.error,
-        prometheusAddress: `http://localhost:${PROMETHEUS_LOCAL_PORT}`
+        grafanaAddress: `http://localhost:${GRAFANA_LOCAL_PORT}`,
+        ipComputeNodeService: OLLAMA_SERVICE_IP,
+        ollamaComputeNode: OLLAMA_NODE,
+        ollamaJobID: OLLAMA_JOB_ID
       });
 
 
@@ -508,14 +520,14 @@ function setupWebApp() {
     // Check if tunnel exists, if not try to create it
     if (!prometheusServer || !prometheusServer.listening) {
       try {
-        await setupPrometheusTunnel();
+        await setupGrafanaTunnel();
       } catch (error) {
         return res.status(503).send('Prometheus tunnel not available: ' + error.message);
       }
     }
     next();
   }, createProxyMiddleware({
-    target: `http://localhost:${PROMETHEUS_LOCAL_PORT}`,
+    target: `http://localhost:${GRAFANA_LOCAL_PORT}`,
     changeOrigin: true,
     ws: true,
     pathRewrite: {
@@ -526,7 +538,7 @@ function setupWebApp() {
       res.status(500).send('Prometheus connection error. Tunnel may be down.');
     },
     onProxyReq: (proxyReq, req, res) => {
-      console.log(`Proxying ${req.method} ${req.url} -> ${PROMETHEUS_LOCAL_PORT}`);
+      console.log(`Proxying ${req.method} ${req.url} -> ${GRAFANA_LOCAL_PORT}`);
     }
   }));*/
 
@@ -583,47 +595,51 @@ process.on('SIGINT', () => {
 
 // Get prometheus_service compute node from squeue
 async function getPrometheusNode(maxAttempts = 100, delayMs = 2000) {
-  console.log("prometheus getting node info") // Initial wait before first attempt
+  console.log("prometheus getting node info");
+  
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     console.log(`[${attempt}/${maxAttempts}] Checking for prometheus_service...`);
     
     try {
       const conn = await getSSHConnection();
       
-      // Query squeue for prometheus_service job
-      const command = `squeue -u ${envParams.username} -n prometheus_service -h -o '%N'`;
-      
-      const output = await new Promise((resolve, reject) => {
-        conn.exec(command, (err, stream) => {
-          if (err) return reject(err);
-
-          let data = '';
-          
-          stream.on('close', () => {
-            resolve(data);
-          }).on('data', (chunk) => {
-            data += chunk.toString();
-          });
-        });
-      });
+      // Use your helper function to run squeue command
+      const squeueCmd = `squeue -u ${envParams.username} -n monitoring_stack -h -o '%N'`;
+      const output = await execCommand(conn, squeueCmd);
       
       const node = output.trim();
-      
       if (node) {
-        console.log(`✓ Found prometheus_service running on node: ${node}`);
-        return node;
+        console.log(`✓ Found monitoring_stack running on node: ${node}`);
+        
+        // Call the 'host' command here using helper function
+        const hostCmd = `host ${node}`;
+        const hostResult = await execCommand(conn, hostCmd);
+        console.log("Host command output:", hostResult.trim());
+
+         // Extract IP using regex
+        const ipRegex = /has address (\d{1,3}(?:\.\d{1,3}){3})/;
+        const match = hostResult.match(ipRegex);
+        IP_COMPUTE_NODE = match ? match[1] : null;
+
+      if (IP_COMPUTE_NODE) {
+        console.log(`Resolved IP for ${node}: ${IP_COMPUTE_NODE}`);
+      } else {
+        console.warn(`No IP address found in output:\n${hostResult}`);
+      }      
+        
+        return node;  // Node name still returned as before
       }
-      
-      // No node found, retry if attempts remaining
+
+      // Retry logic
       if (attempt < maxAttempts) {
-        console.log(`prometheus_service not found, retrying in ${delayMs}ms...`);
+        console.log(`monitoring_stack not found, retrying in ${delayMs}ms...`);
         await new Promise(resolve => setTimeout(resolve, delayMs));
       }
-      
+
     } catch (error) {
       console.error(`Error on attempt ${attempt}:`, error.message);
       
-      // Retry if attempts remaining
+      // Retry if possible
       if (attempt < maxAttempts) {
         await new Promise(resolve => setTimeout(resolve, delayMs));
       } else {
@@ -632,7 +648,82 @@ async function getPrometheusNode(maxAttempts = 100, delayMs = 2000) {
     }
   }
   
-  // All attempts failed
-  throw new Error(`No prometheus_service job found after ${maxAttempts} attempts. Please submit the job first.`);
+  throw new Error(`No monitoring_stack job found after ${maxAttempts} attempts. Please submit the job first.`);
 }
+async function getOllamaServiceInfo(conn, username, options = {}) {
+  const {
+    maxRetries = 10,
+    initialDelay = 20000,
+    maxDelay = 60000,
+    backoffMultiplier = 1.5
+  } = options;
 
+  async function attemptGetServiceInfo(attemptNumber) {
+    try {
+      const jobName = 'ollama_service';
+      const squeueCmd = `squeue -u ${username} -n ${jobName} -h -o '%i %N %S' --sort=-S | head -n 1`;
+      const squeueResult = (await execCommand(conn, squeueCmd)).trim();
+      console.log(`squeue result for ${jobName}:`, squeueResult);
+
+      if (!squeueResult) {
+        throw new Error(`No job found with name: ${jobName}`);
+      }
+
+      // Parse job ID and node name
+      const [jobID, nodeName] = squeueResult.split(/\s+/);
+      
+      if (!jobID || !nodeName) {
+        throw new Error(`Could not parse job info from squeue result: ${squeueResult}`);
+      }
+
+      console.log(`Job '${jobName}' (ID: ${jobID}) is running on node: ${nodeName}`);
+
+      // Step 2: Run host command to get IP address of the node
+      const hostCmd = `host ${nodeName}`;
+      const hostResult = await execCommand(conn, hostCmd);
+
+      // Step 3: Extract IP from host command output
+      const ipRegex = /has address (\d{1,3}(?:\.\d{1,3}){3})/;
+      const match = hostResult.match(ipRegex);
+      const ollamaIP = match ? match[1] : null;
+
+      if (!ollamaIP) {
+        throw new Error(`Could not parse IP from host result:\n${hostResult}`);
+      }
+
+      console.log(`Ollama service details - Job ID: ${jobID}, Node: ${nodeName}, IP: ${ollamaIP}`);
+      
+      return {
+        jobID: jobID,
+        ip: ollamaIP,
+        node: nodeName
+      };
+
+    } catch (err) {
+      if (attemptNumber >= maxRetries) {
+        console.error(`Failed after ${maxRetries} attempts:`, err.message);
+        throw err;
+      }
+
+      const delay = Math.min(
+        initialDelay * Math.pow(backoffMultiplier, attemptNumber),
+        maxDelay
+      );
+
+      console.log(
+        `Attempt ${attemptNumber + 1}/${maxRetries} failed: ${err.message}. ` +
+        `Retrying in ${delay}ms...`
+      );
+
+      await new Promise(resolve => setTimeout(resolve, delay));
+
+      return attemptGetServiceInfo(attemptNumber + 1);
+    }
+  }
+
+  // 👇 Wait before first attempt
+  console.log(`Waiting ${initialDelay}ms before first attempt...`);
+  await new Promise(resolve => setTimeout(resolve, initialDelay));
+
+  return attemptGetServiceInfo(0);
+}

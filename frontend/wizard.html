@@ -102,8 +102,9 @@ async function callBenchmark(config) {
         });
         const result = await response.json();
         if (!result.success) alert('Error: ' + result.error);
-        if(result.success) {alert("jobId: "+ result.jobId+" Correctly submitted!");
-        window.location.replace(result.prometheusAddress, '_blank');}
+        if(result.success) {alert("Ollama_jobId: "+ result.ollamaJobID+" Correctly submitted! You can now monitor the metrics dashboard looking up IP: "+ result.ipComputeNodeService 
+        + " on the compute node: "+ result.ollamaComputeNode);
+        window.location.replace(result.grafanaAddress, '_blank');}
         return result;
     } catch (error) {
         alert('Network error: ' + error.message);

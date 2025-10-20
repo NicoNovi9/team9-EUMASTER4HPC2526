@@ -2,6 +2,7 @@ import json
 import subprocess
 import os
 
+
 def setup_ollama(data):
     # Estraggo parametri dalla ricetta
     job = data.get('job', {})
@@ -27,74 +28,182 @@ def setup_ollama(data):
 #SBATCH --nodes={nodes}
 #SBATCH --ntasks-per-node=1
 #SBATCH --mem={mem_gb}G
-#SBATCH --output=output/logs/ollama_service.out
-#SBATCH --error=output/logs/ollama_service.err
+#SBATCH --output=output/logs/ollama_service_%j.out
+#SBATCH --error=output/logs/ollama_service_%j.err
 
 module load env/release/2024.1
 module load Apptainer
 
 NODE_IP=$(hostname -i)
 NODE_NAME=$(hostname)
-echo $NODE_IP > output/ollama_ip.txt
+JOB_ID=$SLURM_JOB_ID
 
-#------------
+echo "Job ID: $JOB_ID running on $NODE_NAME ($NODE_IP)"
+echo $NODE_IP > output/ollama_ip_${{JOB_ID}}.txt
 
-# START NODE EXPORTER FOR Hardware METRICS
+# Create persistent directory for Ollama models
+mkdir -p output/ollama_models
+
+#============================================
+# CLEANUP FUNCTION (removes targets when job ends)
+#============================================
+
+cleanup() {{
+  echo "Job $JOB_ID terminating, cleaning up target files..."
+  rm -f output/prometheus_assets/node_targets_${{JOB_ID}}.json
+  rm -f output/prometheus_assets/cadvisor_targets_${{JOB_ID}}.json
+  rm -f output/prometheus_assets/gpu_targets_${{JOB_ID}}.json
+  echo "✓ Cleanup completed"
+}}
+
+trap cleanup EXIT
+
+#============================================
+# START NODE EXPORTER FOR HARDWARE METRICS
+#============================================
+
 echo "Setting up Node Exporter for hardware metrics..."
 if [ ! -f output/containers/node_exporter.sif ]; then
     echo "Pulling Node Exporter container..."
     apptainer pull output/containers/node_exporter.sif docker://prom/node-exporter:latest
 fi
+
 apptainer run \\
   --bind /proc:/host/proc:ro \\
   --bind /sys:/host/sys:ro \\
   output/containers/node_exporter.sif \\
   --path.procfs=/host/proc \\
   --path.sysfs=/host/sys \\
-    --collector.cgroups \
-      --collector.processes \
+  --collector.cgroups \\
+  --collector.processes \\
   --web.listen-address=":9100" &
+
 NODE_EXPORTER_PID=$!
 echo "Node Exporter started with PID: $NODE_EXPORTER_PID"
 
-cat > output/prometheus_assets/node_targets.json <<EOF
+# Register Node Exporter with Prometheus (unique file per job)
+cat > output/prometheus_assets/node_targets_${{JOB_ID}}.json <<EOF
 [
   {{
     "targets": ["${{NODE_IP}}:9100"],
     "labels": {{
       "job": "node_exporter",
-      "node": "${{NODE_NAME}}"
+      "node": "${{NODE_NAME}}",
+      "slurm_job_id": "${{JOB_ID}}"
     }}
   }}
 ]
 EOF
-echo "✓ Node Exporter started on ${{NODE_IP}}:9100"
+echo "✓ Node Exporter registered: node_targets_${{JOB_ID}}.json"
 
+#============================================
+# START DCGM EXPORTER FOR GPU METRICS
+#============================================
 
-# Pull Ollama container if missing
+echo "Setting up DCGM Exporter for GPU metrics..."
+if [ ! -f output/containers/dcgm-exporter.sif ]; then
+    echo "Pulling DCGM Exporter container..."
+    apptainer pull output/containers/dcgm-exporter.sif \\
+      docker://nvcr.io/nvidia/k8s/dcgm-exporter:3.3.5-3.4.0-ubuntu22.04
+fi
+
+apptainer exec --nv output/containers/dcgm-exporter.sif dcgm-exporter \\
+  > output/logs/dcgm_exporter_${{JOB_ID}}.out 2> output/logs/dcgm_exporter_${{JOB_ID}}.err &
+
+DCGM_PID=$!
+sleep 5
+echo "DCGM Exporter started with PID: $DCGM_PID"
+
+# Register DCGM with Prometheus (unique file per job)
+cat > output/prometheus_assets/gpu_targets_${{JOB_ID}}.json <<EOF
+[
+  {{
+    "targets": ["${{NODE_IP}}:9400"],
+    "labels": {{
+      "job": "ollama_gpu",
+      "node": "${{NODE_NAME}}",
+      "gpu_type": "nvidia",
+      "model": "{model}",
+      "slurm_job_id": "${{JOB_ID}}"
+    }}
+  }}
+]
+EOF
+echo "✓ DCGM Exporter registered: gpu_targets_${{JOB_ID}}.json"
+
+#============================================
+# START OLLAMA SERVICE
+#============================================
+
+echo "Setting up Ollama service..."
 if [ ! -f output/containers/ollama_latest.sif ]; then
     mkdir -p output/containers
     apptainer pull output/containers/ollama_latest.sif docker://ollama/ollama:latest
 fi
 
-# Avvia il servizio Ollama in background
-apptainer exec --nv output/containers/ollama_latest.sif ollama serve &
-OLLAMA_PID=$!
+# Start Ollama with persistent model storage
+echo "Starting Ollama service..."
+apptainer exec --nv \\
+  --bind output/ollama_models:/root/.ollama \\
+  output/containers/ollama_latest.sif \\
+  ollama serve &
 
-# Aspetta che il servizio si avvii completamente
+OLLAMA_PID=$!
+echo "Ollama started with PID: $OLLAMA_PID"
+
+# Wait for Ollama to be ready
 sleep 15
 
-# Scarica il modello specificato nel JSON
-echo "Downloading model: {model}"
-apptainer exec --nv output/containers/ollama_latest.sif ollama pull {model}
+#============================================
+# DOWNLOAD MODEL (IF NOT ALREADY PRESENT)
+#============================================
 
-echo "Ollama service started with model {model} on $NODE_IP:11434"
+echo "Checking if model {model} is available..."
+MODEL_CHECK=$(apptainer exec --nv \\
+  --bind output/ollama_models:/root/.ollama \\
+  output/containers/ollama_latest.sif \\
+  ollama list | grep -w "{model}" || echo "")
 
-# Mantieni il servizio attivo
-wait $OLLAMA_PID
+if [ -z "$MODEL_CHECK" ]; then
+    echo "Model {model} not found. Downloading..."
+    apptainer exec --nv \\
+      --bind output/ollama_models:/root/.ollama \\
+      output/containers/ollama_latest.sif \\
+      ollama pull {model}
+    echo "✓ Model {model} downloaded successfully"
+else
+    echo "✓ Model {model} already exists, skipping download"
+fi
+
+#============================================
+# SUMMARY
+#============================================
+
+echo ""
+echo "========================================="
+echo "   OLLAMA SERVICE READY (Job $JOB_ID)"
+echo "========================================="
+echo "Node:          ${{NODE_NAME}}"
+echo "IP:            ${{NODE_IP}}"
+echo ""
+echo "Services:"
+echo "  Ollama:        http://${{NODE_IP}}:11434"
+echo "  Node Exporter: http://${{NODE_IP}}:9100"
+echo "  DCGM Exporter: http://${{NODE_IP}}:9400"
+echo ""
+echo "Model:         {model}"
+echo "Model Storage: $(pwd)/output/ollama_models"
+echo ""
+echo "Target files:"
+echo "  - node_targets_${{JOB_ID}}.json"
+echo "  - gpu_targets_${{JOB_ID}}.json"
+echo "========================================="
+echo ""
+
+# Keep all services alive
+wait $OLLAMA_PID $NODE_EXPORTER_PID $DCGM_PID
 """
 
-    
     # Debug logging
     job_name = job.get('name', 'ollama_service')
     print("received JSON:", data)
@@ -106,6 +215,8 @@ wait $OLLAMA_PID
     os.makedirs("output/scripts", exist_ok=True)
     os.makedirs("output/logs", exist_ok=True)
     os.makedirs("output/containers", exist_ok=True)
+    os.makedirs("output/prometheus_assets", exist_ok=True)
+    os.makedirs("output/ollama_models", exist_ok=True)
   
     with open("output/scripts/ollama_service.sh", "w") as f:
         f.write(job_script)

@@ -17,51 +17,114 @@ Ollama Orchestrator - Deploy server and client services. Launches the monitoring
 
 def prepare_monitoring():
     username = os.path.basename(os.path.normpath(os.getcwd()))
-    # Check if pushgateway job is running
+    
+    # === PUSHGATEWAY ===
     pushgateway_running = subprocess.run(
         ['squeue', '-u', username, '-n', 'pushgateway_service', '-h'],
         capture_output=True, text=True).stdout.strip()
     pushgateway_job_id = None
+    
     if pushgateway_running:
-        print("Pushgateway job already running")
-        # Parse job ID from squeue output (first field is JOBID)
+        print("✓ Pushgateway job already running")
         pushgateway_job_id = pushgateway_running.split()[0]
     else:
-        # Submit Pushgateway
         push_result = subprocess.run(['sbatch', 'pushgateway_service.sh'], capture_output=True, text=True)
         output = push_result.stdout.strip()
         print(output)
         if "Submitted batch job" in output:
             pushgateway_job_id = output.split()[-1]
         else:
-            print("Failed to submit pushgateway job")
-            return  # Optional: fail or continue
+            print("❌ Failed to submit pushgateway job")
+            return
 
-        # waiting until pushgateway job is in state "RUNNING", NEEDED SO THAT PUSHGATEWAY IS UP BEFORE CLIENTS TRY TO PUSH METRICS
+        # Wait for Pushgateway to be RUNNING
         print("Waiting for Pushgateway to enter RUNNING state...")
         while True:
             squeue_output = subprocess.run(
                 ['squeue', '-j', pushgateway_job_id, '-o', '%T', '-h'],
                 capture_output=True, text=True).stdout.strip()
             if squeue_output == "RUNNING":
-                print("Pushgateway is RUNNING!")
+                print("✓ Pushgateway is RUNNING!")
                 break
             else:
-                print(f"Current state: {squeue_output}, waiting...")
+                print(f"  Current state: {squeue_output}, waiting...")
                 time.sleep(5)
 
-    # Now check if Prometheus is running and submit if not
+    # === PROMETHEUS/Grafana ===
     prometheus_running = subprocess.run(
-        ['squeue', '-u', username, '-n', 'prometheus_service', '-h'],
+        ['squeue', '-u', username, '-n', 'monitoring_stack', '-h'],
         capture_output=True, text=True).stdout.strip()
+    prometheus_job_id = None
 
     if prometheus_running:
-        print("Prometheus job already running")
+        print("✓ Prometheus job already running")
+        prometheus_job_id = prometheus_running.split()[0]
     else:
-        # submit Prometheus as a normal job, not as a dependency of pushgateway!
-        prom_submit = subprocess.run(['sbatch', 'prometheus_service.sh'],
+        prom_submit = subprocess.run(['sbatch', 'monitoring_stack.sh'],
                                     capture_output=True, text=True)
-        print(prom_submit.stdout.strip())
+        output = prom_submit.stdout.strip()
+        print(output)
+        if "Submitted batch job" in output:
+            prometheus_job_id = output.split()[-1]
+        else:
+            print("x Failed to submit Prometheus job")
+            return
+        
+        # Wait for Prometheus to be RUNNING before starting Grafana
+        print("Waiting for Prometheus to enter RUNNING state...")
+        while True:
+            squeue_output = subprocess.run(
+                ['squeue', '-j', prometheus_job_id, '-o', '%T', '-h'],
+                capture_output=True, text=True).stdout.strip()
+            if squeue_output == "RUNNING":
+                print("✓ Prometheus is RUNNING!")
+                break
+            else:
+                print(f"  Current state: {squeue_output}, waiting...")
+                time.sleep(5)
+        
+        # Give Prometheus extra time to fully initialize
+        print("Waiting 10 seconds for Prometheus to fully initialize...")
+        time.sleep(10)
+
+    # === GRAFANA ===
+   # grafana_running = subprocess.run(
+   #     ['squeue', '-u', username, '-n', 'grafana_service', '-h'],
+   #     capture_output=True, text=True).stdout.strip()
+#
+   # if grafana_running:
+   #     print("✓ Grafana job already running")
+   # else:
+   #     # Submit Grafana only after Prometheus is confirmed running
+   #     grafana_submit = subprocess.run(['sbatch', 'grafana_service.sh'],
+   #                                    capture_output=True, text=True)
+   #     output = grafana_submit.stdout.strip()
+   #     print(output)
+   #     if "Submitted batch job" in output:
+   #         grafana_job_id = output.split()[-1]
+   #         print(f"✓ Grafana submitted with job ID: {grafana_job_id}")
+   #         
+   #         # Optional: wait for Grafana to be running
+   #         print("Waiting for Grafana to enter RUNNING state...")
+   #         while True:
+   #             squeue_output = subprocess.run(
+   #                 ['squeue', '-j', grafana_job_id, '-o', '%T', '-h'],
+   #                 capture_output=True, text=True).stdout.strip()
+   #             if squeue_output == "RUNNING":
+   #                 print("✓ Grafana is RUNNING!")
+   #                 print("  Access at: http://<node_ip>:3000 (admin/admin)")
+   #                 break
+   #             else:
+   #                 print(f"  Current state: {squeue_output}, waiting...")
+   #                 time.sleep(5)
+   #     else:
+   #         print(" ! Failed to submit Grafana job (non-critical)")
+   # 
+   # print("\n=== Monitoring Stack Ready ===")
+   # print("  - Pushgateway: :9091")
+   # print("  - Prometheus:  :9090")
+   # print("  - Grafana:     :3000")
+   # print("==============================\n")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
