@@ -87,45 +87,6 @@ def prepare_monitoring():
         print("Waiting 10 seconds for Prometheus to fully initialize...")
         time.sleep(10)
 
-    # === GRAFANA ===
-   # grafana_running = subprocess.run(
-   #     ['squeue', '-u', username, '-n', 'grafana_service', '-h'],
-   #     capture_output=True, text=True).stdout.strip()
-#
-   # if grafana_running:
-   #     print("✓ Grafana job already running")
-   # else:
-   #     # Submit Grafana only after Prometheus is confirmed running
-   #     grafana_submit = subprocess.run(['sbatch', 'grafana_service.sh'],
-   #                                    capture_output=True, text=True)
-   #     output = grafana_submit.stdout.strip()
-   #     print(output)
-   #     if "Submitted batch job" in output:
-   #         grafana_job_id = output.split()[-1]
-   #         print(f"✓ Grafana submitted with job ID: {grafana_job_id}")
-   #         
-   #         # Optional: wait for Grafana to be running
-   #         print("Waiting for Grafana to enter RUNNING state...")
-   #         while True:
-   #             squeue_output = subprocess.run(
-   #                 ['squeue', '-j', grafana_job_id, '-o', '%T', '-h'],
-   #                 capture_output=True, text=True).stdout.strip()
-   #             if squeue_output == "RUNNING":
-   #                 print("✓ Grafana is RUNNING!")
-   #                 print("  Access at: http://<node_ip>:3000 (admin/admin)")
-   #                 break
-   #             else:
-   #                 print(f"  Current state: {squeue_output}, waiting...")
-   #                 time.sleep(5)
-   #     else:
-   #         print(" ! Failed to submit Grafana job (non-critical)")
-   # 
-   # print("\n=== Monitoring Stack Ready ===")
-   # print("  - Pushgateway: :9091")
-   # print("  - Prometheus:  :9090")
-   # print("  - Grafana:     :3000")
-   # print("==============================\n")
-
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 orch.py <json_file_path>")
