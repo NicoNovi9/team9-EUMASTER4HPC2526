@@ -89,6 +89,7 @@ cat > output/prometheus_assets/node_targets_${{JOB_ID}}.json <<EOF
     "labels": {{
       "job": "node_exporter",
       "node": "${{NODE_NAME}}",
+      "node_type": "service",
       "slurm_job_id": "${{JOB_ID}}"
     }}
   }}

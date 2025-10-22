@@ -13,6 +13,7 @@
 
 module load env/release/2024.1
 module load Apptainer
+module load Python
 
 # Go to submit directory
 cd $SLURM_SUBMIT_DIR || exit 1
@@ -96,6 +97,7 @@ apiVersion: 1
 datasources:
   - name: Prometheus
     type: prometheus
+    uid: prometheus 
     access: proxy
     url: http://localhost:9090
     isDefault: true
@@ -123,40 +125,134 @@ providers:
 EOF
 
 echo "✓ Grafana dashboard provider configuration created"
-
 # ========================================
 # DOWNLOAD GRAFANA DASHBOARDS
 # ========================================
 
 echo "Downloading preconfigured Grafana dashboards..."
 
-# Download Node Exporter dashboard if not exists
-if [ ! -f output/grafana_config/provisioning/dashboards/node-exporter.json ]; then
-    echo "  - Downloading Node Exporter dashboard (ID 1860)..."
-    curl -s -o output/grafana_config/provisioning/dashboards/node-exporter.json \
-      https://grafana.com/api/dashboards/1860/revisions/latest/download || \
-      echo "    ⚠️  Failed to download Node Exporter dashboard"
+# Download Node Exporter dashboard for Ollama/Service nodes
+if [ ! -f output/grafana_config/provisioning/dashboards/node-exporter-service.json ]; then
+    echo "  - Creating Node Exporter Service dashboard..."
+    curl -s -o /tmp/node-service-raw.json \
+      https://grafana.com/api/dashboards/1860/revisions/latest/download
+    
+    if [ $? -eq 0 ] && [ -f /tmp/node-service-raw.json ]; then
+        python3 << 'PYEOF' > output/grafana_config/provisioning/dashboards/node-exporter-service.json
+import json
+
+with open('/tmp/node-service-raw.json', 'r') as f:
+    dashboard = json.load(f)
+
+# Fix datasource references - be specific to avoid breaking other UIDs
+def fix_datasource(obj):
+    if isinstance(obj, dict):
+        # Check if this dict has a 'datasource' key
+        if 'datasource' in obj:
+            ds = obj['datasource']
+            # Fix string datasource
+            if isinstance(ds, str) and ('${' in ds or ds == ''):
+                obj['datasource'] = 'Prometheus'
+            # Fix object datasource (but only if it looks like a datasource)
+            elif isinstance(ds, dict):
+                # Only modify if it has datasource-like properties
+                if 'type' in ds or 'uid' in ds:
+                    # Check if uid contains variable or is empty
+                    if 'uid' in ds and (isinstance(ds['uid'], str) and ('${' in ds['uid'] or ds['uid'] == '')):
+                        ds['uid'] = 'prometheus'
+                    if 'type' not in ds or ds['type'] == '':
+                        ds['type'] = 'prometheus'
+        
+        # Recurse into nested objects
+        for key, value in obj.items():
+            if key != 'datasource':  # Don't recurse into datasource we just fixed
+                fix_datasource(value)
+    elif isinstance(obj, list):
+        for item in obj:
+            fix_datasource(item)
+
+# Fix all datasources
+fix_datasource(dashboard)
+
+# Update dashboard metadata (separate from datasources)
+dashboard['title'] = 'Node Exporter - Ollama Service'
+dashboard['uid'] = 'node-exporter-service'
+if 'id' in dashboard:
+    dashboard['id'] = None
+
+print(json.dumps(dashboard, indent=2))
+PYEOF
+        
+        echo "    ✓ Node Exporter Service dashboard created"
+        rm -f /tmp/node-service-raw.json
+    else
+        echo "    ⚠️  Failed to download Node Exporter Service dashboard"
+    fi
 fi
 
-# Download cAdvisor dashboard if not exists
+# Download Node Exporter dashboard for Client nodes  
+if [ ! -f output/grafana_config/provisioning/dashboards/node-exporter-client.json ]; then
+    echo "  - Creating Node Exporter Client dashboard..."
+    curl -s -o /tmp/node-client-raw.json \
+      https://grafana.com/api/dashboards/1860/revisions/latest/download
+    
+    if [ $? -eq 0 ] && [ -f /tmp/node-client-raw.json ]; then
+        python3 << 'PYEOF' > output/grafana_config/provisioning/dashboards/node-exporter-client.json
+import json
+
+with open('/tmp/node-client-raw.json', 'r') as f:
+    dashboard = json.load(f)
+
+def fix_datasource(obj):
+    if isinstance(obj, dict):
+        if 'datasource' in obj:
+            ds = obj['datasource']
+            if isinstance(ds, str) and ('${' in ds or ds == ''):
+                obj['datasource'] = 'Prometheus'
+            elif isinstance(ds, dict):
+                if 'type' in ds or 'uid' in ds:
+                    if 'uid' in ds and (isinstance(ds['uid'], str) and ('${' in ds['uid'] or ds['uid'] == '')):
+                        ds['uid'] = 'prometheus'
+                    if 'type' not in ds or ds['type'] == '':
+                        ds['type'] = 'prometheus'
+        
+        for key, value in obj.items():
+            if key != 'datasource':
+                fix_datasource(value)
+    elif isinstance(obj, list):
+        for item in obj:
+            fix_datasource(item)
+
+fix_datasource(dashboard)
+dashboard['title'] = 'Node Exporter - Client Nodes'
+dashboard['uid'] = 'node-exporter-client'
+if 'id' in dashboard:
+    dashboard['id'] = None
+
+print(json.dumps(dashboard, indent=2))
+PYEOF
+        
+        echo "    ✓ Node Exporter Client dashboard created"
+        rm -f /tmp/node-client-raw.json
+    else
+        echo "    ⚠️  Failed to create Client dashboard"
+    fi
+fi
+
+# Keep cAdvisor and DCGM as before (sed works for them)
 if [ ! -f output/grafana_config/provisioning/dashboards/cadvisor.json ]; then
-    echo "  - Downloading cAdvisor dashboard (ID 14282)..."
+    echo "  - Downloading cAdvisor dashboard..."
     curl -s -o output/grafana_config/provisioning/dashboards/cadvisor.json \
       https://grafana.com/api/dashboards/14282/revisions/latest/download || \
       echo "    ⚠️  Failed to download cAdvisor dashboard"
 fi
 
-# Download NVIDIA DCGM GPU dashboard if not exists
-# Download NVIDIA DCGM GPU dashboard if not exists
 if [ ! -f output/grafana_config/provisioning/dashboards/dcgm-gpu.json ]; then
-    echo "  - Downloading NVIDIA DCGM GPU dashboard (ID 12239)..."
-    
-    # Download to temporary file first
+    echo "  - Downloading NVIDIA DCGM GPU dashboard..."
     curl -s -o /tmp/dcgm-gpu-raw.json \
       https://grafana.com/api/dashboards/12239/revisions/latest/download
     
     if [ $? -eq 0 ] && [ -f /tmp/dcgm-gpu-raw.json ]; then
-        # Fix datasource references for provisioning
         sed -e 's/"datasource":[[:space:]]*"${DS_PROMETHEUS}"/"datasource": "Prometheus"/g' \
             -e 's/"uid":[[:space:]]*"${DS_PROMETHEUS}"/"uid": "prometheus"/g' \
             -e 's/${DS_PROMETHEUS}/Prometheus/g' \
@@ -164,8 +260,6 @@ if [ ! -f output/grafana_config/provisioning/dashboards/dcgm-gpu.json ]; then
         
         echo "    ✓ DCGM dashboard downloaded and fixed"
         rm -f /tmp/dcgm-gpu-raw.json
-    else
-        echo "    ⚠️  Failed to download DCGM GPU dashboard"
     fi
 fi
 
@@ -258,7 +352,8 @@ echo "  Prometheus: http://$(hostname -i):9090"
 echo "  Grafana:    http://$(hostname -i):3000"
 echo ""
 echo "Dashboards provisioned:"
-echo "  - Node Exporter (CPU, RAM, Disk, Network)"
+echo "  - Node Exporter - Ollama Service (Nodes running Ollama)"
+echo "  - Node Exporter - Client Nodes (Nodes running clients)"
 echo "  - cAdvisor (Container metrics)"
 echo "  - NVIDIA DCGM (GPU metrics)"
 echo ""
