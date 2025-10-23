@@ -4,9 +4,10 @@ import requests
 import json
 import time
 import sys
-import clientService
+import os
+import glob
 from flask import jsonify
-import clientService
+
 
 def test_client_service():
     """Test the containerized client service"""
@@ -89,83 +90,204 @@ def test_client_service():
 
 
 
-def push_tps_to_pushgateway(tps_value, pushgateway_ip, client_id):
-    metric_data = f"""
-# TYPE tokens_per_second gauge
-tokens_per_second{{client="{client_id}"}} {tps_value}
+def push_tps_to_pushgateway(tps_value, pushgateway_ip, client_id, model="unknown"):
+    """Push TPS metric to Pushgateway"""
+    metric_data = f"""# TYPE tokens_per_second gauge
+tokens_per_second{{client_id="{client_id}",model="{model}"}} {tps_value}
 """
-    url = f"http://{pushgateway_ip}:9091/metrics/job/llm_inference/instance/{client_id}"
-    response = requests.put(url, data=metric_data.encode('utf-8'), headers={'Content-Type': 'text/plain'})
-    if response.status_code != 200:
-        print(f"Error pushing TPS metric: {response.status_code} - {response.text}")
+    url = f"http://{pushgateway_ip}:9091/metrics/job/benchmark/instance/{client_id}"
+    
+    print(f"\n=== PUSHING TO PUSHGATEWAY ===")
+    print(f"URL: {url}")
+    print(f"TPS: {tps_value:.2f}")
+    print(f"Client ID: {client_id}")
+    print(f"Model: {model}")
+    
+    try:
+        response = requests.put(
+            url,
+            data=metric_data.encode('utf-8'),
+            headers={'Content-Type': 'text/plain'},
+            timeout=5
+        )
+        
+        print(f"Response status: {response.status_code}")
+        
+        if response.status_code == 200:
+            print(f"✓ SUCCESSFULLY Pushed TPS={tps_value:.2f} to Pushgateway")
+        else:
+            print(f"✗ Pushgateway error: {response.status_code}")
+            print(f"Response: {response.text}")
+    except requests.exceptions.RequestException as e:
+        print(f"✗ Failed to push to Pushgateway: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    print("=================================\n")
+
 
 def query(data=None):
     """
-    Query Ollama with prompt/model data.
-
-    If `data` dict is not provided, it attempts to get JSON from Flask request.
+    Query Ollama DIRECTLY and push metrics to Pushgateway.
+    Bypasses clientService Flask completely.
     """
     try:
-        print("hello from testClientService.py, query function!!")
+        print("\n" + "="*60)
+        print("=== DIRECT OLLAMA QUERY (testClientService) ===")
+        print("="*60)
         
-
-        prompt = 'hello how are you?'
-        model = 'mistral'
+        # Extract parameters
+        prompt = data.get('prompt', 'hello how are you?') if data else 'hello how are you?'
+        model = data.get('model', 'mistral') if data else 'mistral'
         
-        print(f"Querying Ollama: {prompt[:50]}...")
-
-        start_time = time.time()
-        ollamaClientService= clientService.OllamaClientService()
-        print("let's see the ollamaHost IP gatherd by the constructor->"+str(ollamaClientService.ollama_host))#prende localhost...
-        with open('output/ollama_ip.txt', 'r') as f:
-            ollama_ip = f.read().strip()
-
-        ollamaClientService.ollama_host = ollama_ip
-        print("setted ollama_ip to ollamaClientService.ollama_host->"+ ollamaClientService.ollama_host)
-        print("initialiazed ollamaClientService")
-        response=ollamaClientService.query_ollama(prompt, model)
-        end_time = time.time()
-        elapsed = end_time - start_time if end_time > start_time else 1e-6 # todo bring it to clientService.query_ollama
-        print("computed elapsed time", elapsed);
-        if 'response' in response:
-            print("✓ Response received")
-            text = response['response']#parsing the response to get the text
-            num_tokens = len(text.split())
-            tps = num_tokens / elapsed
-            print(f"Response received: {len(text)} chars, TPS: {tps:.2f}")
-            print(f"Preview: {text[:100]}...")
-
+        print(f"Prompt: {prompt[:50]}...")
+        print(f"Model: {model}")
+        
+        # Load Ollama IP (with job ID pattern support)
+        try:
+            if os.path.exists('output/ollama_ip.txt'):
+                with open('output/ollama_ip.txt', 'r') as f:
+                    ollama_ip = f.read().strip()
+            else:
+                ollama_files = sorted(glob.glob('output/ollama_ip_*.txt'), key=os.path.getmtime, reverse=True)
+                if ollama_files:
+                    with open(ollama_files[0], 'r') as f:
+                        ollama_ip = f.read().strip()
+                    print(f"Using Ollama IP file: {ollama_files[0]}")
+                else:
+                    print("✗ Error: No ollama_ip file found")
+                    return json.dumps({"error": "ollama_ip file not found"})
+        except Exception as e:
+            print(f"✗ Error loading Ollama IP: {e}")
+            return json.dumps({"error": str(e)})
+        
+        print(f"Ollama IP: {ollama_ip}")
+        
+        # Construct Ollama API URL
+        ollama_url = f"http://{ollama_ip}:11434/api/generate"
+        print(f"Ollama URL: {ollama_url}")
+        
+        # Prepare payload
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "stream": False
+        }
+        
+        # Query Ollama with retry logic
+        max_retries = 3
+        response_data = None
+        
+        for attempt in range(max_retries):
+            try:
+                print(f"\nAttempt {attempt+1}/{max_retries}: Calling Ollama directly...")
+                start_time = time.time()
+                
+                response = requests.post(
+                    ollama_url,
+                    json=payload,
+                    timeout=60,
+                    headers={'Content-Type': 'application/json'}
+                )
+                
+                end_time = time.time()
+                elapsed = end_time - start_time
+                
+                if response.status_code == 200:
+                    response_data = response.json()
+                    print(f"✓ Response received from Ollama in {elapsed:.2f}s")
+                    break
+                else:
+                    print(f"✗ Ollama returned {response.status_code}: {response.text}")
+                    
+            except requests.exceptions.Timeout:
+                print(f"✗ Timeout on attempt {attempt+1}")
+            except requests.exceptions.RequestException as e:
+                print(f"✗ Request failed on attempt {attempt+1}: {e}")
+            
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt
+                print(f"  Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                error_response = {"error": f"Failed to reach Ollama after {max_retries} attempts"}
+                print(f"✗ {error_response['error']}")
+                try:
+                    return jsonify(error_response)
+                except RuntimeError:
+                    return json.dumps(error_response)
+        
+        # Process response and calculate TPS
+        if response_data and 'response' in response_data:
+            text = response_data['response']
+            print(f"\n✓ Response received")
+            print(f"  Text length: {len(text)} chars")
+            
+            # Calculate TPS using eval_count from Ollama (MODEL AGNOSTIC)
+            if 'eval_count' in response_data:
+                num_tokens = response_data['eval_count']
+                print(f"  ✓ Using eval_count: {num_tokens} tokens")
+            elif 'prompt_eval_count' in response_data:
+                num_tokens = response_data['prompt_eval_count']
+                print(f"  ⚠ Using prompt_eval_count: {num_tokens} tokens")
+            else:
+                num_tokens = len(text.split())
+                print(f"  ⚠ Estimating tokens from text: {num_tokens} tokens")
+            
+            tps = num_tokens / elapsed if elapsed > 0 else 0
+            print(f"  ✓ Calculated TPS: {tps:.2f} tokens/sec")
+            print(f"  Response preview: {text[:100]}...")
+            
+            # Load Pushgateway IP
             try:
                 with open("output/pushgateway_data/pushgateway_ip.txt", "r") as f:
                     pushgateway_ip = f.read().strip()
+                print(f"\n✓ Pushgateway IP: {pushgateway_ip}")
             except FileNotFoundError:
-                print("Warning: pushgateway_ip.txt not found. Metrics will not be pushed.")
+                print("\n⚠ Warning: pushgateway_ip.txt not found. Metrics will NOT be pushed.")
                 pushgateway_ip = None
-
-            client_id = "client_01" # todo, remove hardcoding!! In real use, generate or assign unique client IDs
-
+            
+            # Get client ID from environment or use default
+            client_id = os.environ.get("CLIENT_ID", "client_direct_01")
+            print(f"✓ Client ID: {client_id}")
+            
+            # Push metrics to Pushgateway
             if pushgateway_ip:
-                push_tps_to_pushgateway(tps, pushgateway_ip, client_id)
+                push_tps_to_pushgateway(tps, pushgateway_ip, client_id, model)
+            else:
+                print("⚠ Skipping push - Pushgateway not configured")
+            
+            # Add computed metrics to response
+            response_data['tps'] = tps
+            response_data['num_tokens'] = num_tokens
+            response_data['elapsed'] = elapsed
+            
+            print("\n" + "="*60)
+            print("=== QUERY COMPLETED SUCCESSFULLY ===")
+            print("="*60 + "\n")
+            
         else:
-            print("response->", response)
-            print(f"✗ Error in response: {response.get('error', 'Unknown error')}")
-
-        # Return JSON response properly for Flask or JSON string outside Flask
+            error_msg = response_data.get('error', 'Unknown error') if response_data else 'No response'
+            print(f"\n✗ Error: {error_msg}")
+            print("="*60 + "\n")
+        
+        # Return JSON response
         try:
-            return jsonify(response)
+            return jsonify(response_data)
         except RuntimeError:
-            return json.dumps(response)
-
+            return json.dumps(response_data)
+    
     except Exception as e:
         error_response = {"error": str(e)}
-        print(f"✗ Exception occurred: {str(e)}")
+        print(f"\n✗ Exception in query(): {str(e)}")
+        import traceback
+        traceback.print_exc()
+        print("="*60 + "\n")
         try:
             return jsonify(error_response)
         except RuntimeError:
             return json.dumps(error_response)
-
-
-
+        
 if __name__ == "__main__":
     success = test_client_service()
     sys.exit(0 if success else 1)

@@ -2,9 +2,9 @@
 #SBATCH --job-name=monitoring_stack
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=6
-#SBATCH --mem-per-cpu=4G
-#SBATCH --time=01:00:00
+#SBATCH --cpus-per-task=2           # ← Ridotto da 6 a 2
+#SBATCH --mem=8G                    # ← Cambiato: 8GB totale invece di 24GB
+#SBATCH --time=02:00:00             # ← Aumentato a 2h per sicurezza
 #SBATCH --qos=default
 #SBATCH --partition=cpu
 #SBATCH --account=p200981
@@ -115,7 +115,7 @@ apiVersion: 1
 providers:
   - name: 'System Metrics'
     orgId: 1
-    folder: 'Hardware Monitoring'
+    folder: 'Benchmarking Monitoring'
     type: file
     disableDeletion: false
     updateIntervalSeconds: 10
@@ -266,6 +266,277 @@ fi
 echo "✓ Dashboard download completed"
 
 # ========================================
+# CREATE CUSTOM TOKENS PER SECOND DASHBOARD
+# ========================================
+if [ ! -f output/grafana_config/provisioning/dashboards/tokens-per-second.json ]; then
+    echo "  - Creating Tokens Per Second dashboard..."
+    python3 << 'PYEOF' > output/grafana_config/provisioning/dashboards/tokens-per-second.json
+import json
+
+dashboard = {
+  "annotations": {"list": []},
+  "editable": True,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": None,
+  "links": [],
+  "liveNow": True,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisCenteredZero": False,
+            "axisColorMode": "text",
+            "axisLabel": "Tokens/sec",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "lineInterpolation": "linear",
+            "lineWidth": 3,
+            "pointSize": 8,
+            "showPoints": "always",
+            "spanNulls": False
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": None},
+              {"color": "yellow", "value": 30},
+              {"color": "green", "value": 80}
+            ]
+          },
+          "unit": "tps"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "legend": {
+          "calcs": ["mean", "max", "min", "last"],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": True
+        },
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "editorMode": "code",
+          "expr": "avg(tokens_per_second{model=~\"$model\"}) by (model)",
+          "legendFormat": "{{model}}",
+          "range": True,
+          "refId": "A"
+        }
+      ],
+      "title": "Tokens Per Second by Model - GPU vs CPU",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisCenteredZero": False,
+            "axisColorMode": "text",
+            "axisLabel": "Tokens/sec",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "spanNulls": False
+          },
+          "mappings": [],
+          "unit": "tps"
+        }
+      },
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": ["mean", "last"],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": True
+        },
+        "tooltip": {"mode": "multi"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "tokens_per_second{model=~\"$model\"}",
+          "legendFormat": "{{client_id}} - {{model}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Tokens Per Second - All Clients (by Model & Client)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": None},
+              {"color": "yellow", "value": 30},
+              {"color": "green", "value": 80}
+            ]
+          },
+          "unit": "tps"
+        }
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 20},
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "values": False,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "textMode": "value_and_name"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "avg(tokens_per_second{model=~\"$model\"})",
+          "refId": "A"
+        }
+      ],
+      "title": "Current Average (All Models)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "custom": {
+            "align": "auto",
+            "cellOptions": {"type": "color-text"},
+            "inspect": False
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": None},
+              {"color": "yellow", "value": 30},
+              {"color": "green", "value": 80}
+            ]
+          },
+          "unit": "tps"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 6, "w": 16, "x": 8, "y": 20},
+      "id": 4,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": False,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": False
+        },
+        "showHeader": True,
+        "sortBy": [{"desc": True, "displayName": "Value"}]
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "tokens_per_second{model=~\"$model\"}",
+          "format": "table",
+          "instant": True,
+          "refId": "A"
+        }
+      ],
+      "title": "Performance Summary by Model & Client",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": True,
+              "__name__": True,
+              "instance": True,
+              "job": True
+            },
+            "renameByName": {
+              "Value": "Tokens/sec",
+              "client_id": "Client ID",
+              "model": "Model"
+            }
+          }
+        }
+      ],
+      "type": "table"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["benchmark", "performance", "tokens", "model-comparison"],
+  "templating": {
+    "list": [
+      {
+        "current": {"selected": True, "text": "All", "value": "$__all"},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "definition": "label_values(tokens_per_second, model)",
+        "hide": 0,
+        "includeAll": True,
+        "label": "Model",
+        "multi": True,
+        "name": "model",
+        "options": [],
+        "query": {
+          "query": "label_values(tokens_per_second, model)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": False,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {"from": "now-15m", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "Tokens Per Second - Model Comparison",
+  "uid": "tokens-per-second",
+  "version": 0,
+  "weekStart": ""
+}
+
+print(json.dumps(dashboard, indent=2))
+PYEOF
+    echo "    ✓ Tokens Per Second dashboard created"
+fi
+
+
+# ========================================
 # PULL CONTAINER IMAGES
 # ========================================
 
@@ -354,6 +625,7 @@ echo ""
 echo "Dashboards provisioned:"
 echo "  - Node Exporter - Ollama Service (Nodes running Ollama)"
 echo "  - Node Exporter - Client Nodes (Nodes running clients)"
+echo "  - Tokens Per Second (GPU vs CPU performance)"
 echo "  - cAdvisor (Container metrics)"
 echo "  - NVIDIA DCGM (GPU metrics)"
 echo ""
