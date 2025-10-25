@@ -384,71 +384,316 @@ function setupWebApp() {
     res.sendFile(path.join(__dirname, 'wizard.html'));
   });
 
-  // Prometheus monitoring endpoint
-  app.get('/monitor', async (req, res) => {
+  // ========================================
+  // LOGS ENDPOINTS
+  // ========================================
+
+  // Get list of log files/directories
+  app.get('/logs', async (req, res) => {
     try {
-      // Ensure tunnel is active
-      await setupGrafanaTunnel();
-      
-      // Serve HTML page with embedded Prometheus
+      const conn = await getSSHConnection();
+      const subPath = req.query.path || ''; // Support subdirectories
+      const baseLogsPath = `/home/users/${envParams.username}/output/logs`;
+      const fullPath = subPath ? `${baseLogsPath}/${subPath}` : baseLogsPath;
+
+      const logsList = await listLogsDirectory(conn, fullPath, subPath);
+
       res.send(`
         <!DOCTYPE html>
         <html>
         <head>
-          <title>Prometheus Monitoring - MeluXina</title>
+          <title>Logs Browser - MeluXina</title>
           <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body { 
-              font-family: Arial, sans-serif;
-              overflow: hidden;
+              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+              background: #f5f5f5;
             }
             .header {
               background: #2c3e50;
               color: white;
-              padding: 15px 20px;
+              padding: 20px 30px;
               box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             }
             .header h1 {
-              font-size: 20px;
-              font-weight: normal;
+              font-size: 24px;
+              margin-bottom: 10px;
             }
-            .status {
-              display: inline-block;
-              margin-left: 20px;
-              padding: 4px 12px;
+            .breadcrumb {
+              font-size: 14px;
+              opacity: 0.8;
+            }
+            .breadcrumb a {
+              color: #3498db;
+              text-decoration: none;
+            }
+            .breadcrumb a:hover {
+              text-decoration: underline;
+            }
+            .container {
+              max-width: 1200px;
+              margin: 30px auto;
+              padding: 0 20px;
+            }
+            .item {
+              background: white;
+              border-radius: 8px;
+              padding: 15px 20px;
+              margin-bottom: 10px;
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+              transition: all 0.2s;
+            }
+            .item:hover {
+              box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+              transform: translateY(-2px);
+            }
+            .item-left {
+              display: flex;
+              align-items: center;
+              gap: 15px;
+              flex: 1;
+            }
+            .icon {
+              font-size: 24px;
+              width: 40px;
+              text-align: center;
+            }
+            .item-info {
+              flex: 1;
+            }
+            .item-name {
+              font-weight: 600;
+              font-size: 16px;
+              color: #2c3e50;
+              margin-bottom: 5px;
+            }
+            .item-meta {
+              font-size: 13px;
+              color: #7f8c8d;
+            }
+            .item-actions {
+              display: flex;
+              gap: 10px;
+            }
+            .btn {
+              padding: 8px 16px;
+              border: none;
+              border-radius: 5px;
+              cursor: pointer;
+              font-size: 14px;
+              text-decoration: none;
+              transition: all 0.2s;
+            }
+            .btn-view {
+              background: #3498db;
+              color: white;
+            }
+            .btn-view:hover {
+              background: #2980b9;
+            }
+            .btn-download {
               background: #27ae60;
-              border-radius: 12px;
-              font-size: 12px;
+              color: white;
             }
-            iframe { 
-              position: absolute;
-              top: 50px;
-              left: 0;
-              width: 100%; 
-              height: calc(100% - 50px);
-              border: none; 
+            .btn-download:hover {
+              background: #229954;
+            }
+            .empty {
+              text-align: center;
+              padding: 60px 20px;
+              color: #95a5a6;
+            }
+            .empty-icon {
+              font-size: 64px;
+              margin-bottom: 20px;
             }
           </style>
         </head>
         <body>
           <div class="header">
-            <h1>
-              Prometheus Monitoring
-              <span class="status">🟢 Connected to ${MONITORING_COMPUTE_NODE}</span>
-            </h1>
+            <h1>📋 Logs Browser</h1>
+            <div class="breadcrumb">
+              <a href="/logs">output/logs</a>${subPath ? ' / ' + subPath.split('/').map((part, idx, arr) => {
+                const partialPath = arr.slice(0, idx + 1).join('/');
+                return `<a href="/logs?path=${encodeURIComponent(partialPath)}">${part}</a>`;
+              }).join(' / ') : ''}
+            </div>
           </div>
-          <iframe src="/prometheus/" sandbox="allow-same-origin allow-scripts allow-forms"></iframe>
+          
+          <div class="container">
+            ${logsList.directories.length === 0 && logsList.files.length === 0 ? `
+              <div class="empty">
+                <div class="empty-icon">📂</div>
+                <h2>No logs found</h2>
+                <p>This directory is empty</p>
+              </div>
+            ` : ''}
+            
+            ${logsList.directories.map(dir => `
+              <div class="item">
+                <div class="item-left">
+                  <div class="icon">📁</div>
+                  <div class="item-info">
+                    <div class="item-name">${dir.name}</div>
+                    <div class="item-meta">Modified: ${new Date(dir.modified).toLocaleString()}</div>
+                  </div>
+                </div>
+                <div class="item-actions">
+                  <a href="/logs?path=${encodeURIComponent(dir.path)}" class="btn btn-view">Open</a>
+                </div>
+              </div>
+            `).join('')}
+            
+            ${logsList.files.map(file => `
+              <div class="item">
+                <div class="item-left">
+                  <div class="icon">${file.extension === '.err' ? '❌' : file.extension === '.out' ? '✅' : '📄'}</div>
+                  <div class="item-info">
+                    <div class="item-name">${file.name}</div>
+                    <div class="item-meta">
+                      Size: ${(file.size / 1024).toFixed(2)} KB | 
+                      Modified: ${new Date(file.modified).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+                <div class="item-actions">
+                  <a href="/logs/view?file=${encodeURIComponent(file.path)}" class="btn btn-view" target="_blank">View</a>
+                  <a href="/logs/download?file=${encodeURIComponent(file.path)}" class="btn btn-download">Download</a>
+                </div>
+              </div>
+            `).join('')}
+          </div>
         </body>
         </html>
       `);
     } catch (error) {
-      res.status(500).send(`
-        <h1>Error</h1>
-        <p>Failed to setup Prometheus tunnel: ${error.message}</p>
-        <p>Make sure Prometheus is running on ${MONITORING_COMPUTE_NODE}:9090</p>
-      `);
+      res.status(500).json({ success: false, error: error.message });
     }
   });
+
+  // View log file content
+  app.get('/logs/view', async (req, res) => {
+    try {
+      const conn = await getSSHConnection();
+      const filePath = req.query.file;
+      
+      if (!filePath) {
+        return res.status(400).send('File path required');
+      }
+
+      const baseLogsPath = `/home/users/${envParams.username}/output/logs`;
+      const fullPath = `${baseLogsPath}/${filePath}`;
+      
+      const content = await readLogFile(conn, fullPath);
+      const fileInfo = await getFileInfo(conn, fullPath);
+
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>${path.basename(filePath)} - Log Viewer</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+              font-family: 'Monaco', 'Courier New', monospace;
+              background: #1e1e1e;
+              color: #d4d4d4;
+            }
+            .header {
+              background: #2c3e50;
+              color: white;
+              padding: 15px 20px;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            }
+            .header-left h1 {
+              font-size: 18px;
+              margin-bottom: 5px;
+            }
+            .header-left .meta {
+              font-size: 12px;
+              opacity: 0.7;
+            }
+            .btn-back {
+              padding: 8px 16px;
+              background: #34495e;
+              color: white;
+              text-decoration: none;
+              border-radius: 5px;
+              font-size: 14px;
+            }
+            .btn-back:hover {
+              background: #2c3e50;
+            }
+            .content {
+              padding: 20px;
+              white-space: pre-wrap;
+              word-wrap: break-word;
+              font-size: 13px;
+              line-height: 1.6;
+              max-width: 100%;
+              overflow-x: auto;
+            }
+            .line-number {
+              color: #858585;
+              user-select: none;
+              padding-right: 20px;
+              border-right: 1px solid #3e3e3e;
+              margin-right: 20px;
+            }
+            .error-line {
+              background: rgba(255, 0, 0, 0.1);
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="header-left">
+              <h1>📄 ${path.basename(filePath)}</h1>
+              <div class="meta">
+                Size: ${(fileInfo.size / 1024).toFixed(2)} KB | 
+                Modified: ${new Date(fileInfo.modified).toLocaleString()}
+              </div>
+            </div>
+            <a href="/logs?path=${encodeURIComponent(path.dirname(filePath))}" class="btn-back">← Back</a>
+          </div>
+          <div class="content">${content || '<em style="color: #888;">File is empty</em>'}</div>
+        </body>
+        </html>
+      `);
+    } catch (error) {
+      res.status(500).send(`<h1>Error</h1><p>${error.message}</p>`);
+    }
+  });
+
+  // Download log file
+  app.get('/logs/download', async (req, res) => {
+    try {
+      const conn = await getSSHConnection();
+      const filePath = req.query.file;
+      
+      if (!filePath) {
+        return res.status(400).send('File path required');
+      }
+
+      const baseLogsPath = `/home/users/${envParams.username}/output/logs`;
+      const fullPath = `${baseLogsPath}/${filePath}`;
+      
+      const content = await readLogFile(conn, fullPath);
+      
+      res.setHeader('Content-Disposition', `attachment; filename="${path.basename(filePath)}"`);
+      res.setHeader('Content-Type', 'text/plain');
+      res.send(content);
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
 
   // Setup Prometheus tunnel endpoint
   app.post('/setup-tunnel', async (req, res) => {
@@ -726,4 +971,117 @@ async function getOllamaServiceInfo(conn, username, options = {}) {
   await new Promise(resolve => setTimeout(resolve, initialDelay));
 
   return attemptGetServiceInfo(0);
+}
+// Aggiungi questa funzione helper per leggere directory ricorsivamente
+async function listLogsDirectory(conn, remotePath, relativePath = '') {
+  try {
+    const sftp = await new Promise((resolve, reject) => {
+      conn.sftp((err, sftpSession) => {
+        if (err) reject(err);
+        else resolve(sftpSession);
+      });
+    });
+
+    const items = await new Promise((resolve, reject) => {
+      sftp.readdir(remotePath, (err, list) => {
+        if (err) reject(err);
+        else resolve(list);
+      });
+    });
+
+    const result = {
+      files: [],
+      directories: []
+    };
+
+    for (const item of items) {
+      const fullPath = `${remotePath}/${item.filename}`;
+      const relPath = relativePath ? `${relativePath}/${item.filename}` : item.filename;
+
+      if (item.attrs.isDirectory()) {
+        result.directories.push({
+          name: item.filename,
+          path: relPath,
+          size: item.attrs.size,
+          modified: new Date(item.attrs.mtime * 1000).toISOString()
+        });
+      } else {
+        result.files.push({
+          name: item.filename,
+          path: relPath,
+          size: item.attrs.size,
+          modified: new Date(item.attrs.mtime * 1000).toISOString(),
+          extension: path.extname(item.filename)
+        });
+      }
+    }
+
+    // Sort: directories first, then files, both alphabetically
+    result.directories.sort((a, b) => a.name.localeCompare(b.name));
+    result.files.sort((a, b) => a.name.localeCompare(b.name));
+
+    return result;
+  } catch (error) {
+    console.error('Error listing logs directory:', error);
+    throw error;
+  }
+}
+
+// Aggiungi questa funzione per leggere il contenuto di un file
+async function readLogFile(conn, remotePath) {
+  try {
+    const sftp = await new Promise((resolve, reject) => {
+      conn.sftp((err, sftpSession) => {
+        if (err) reject(err);
+        else resolve(sftpSession);
+      });
+    });
+
+    return new Promise((resolve, reject) => {
+      const readStream = sftp.createReadStream(remotePath);
+      let content = '';
+
+      readStream.on('data', (chunk) => {
+        content += chunk.toString('utf8');
+      });
+
+      readStream.on('end', () => {
+        resolve(content);
+      });
+
+      readStream.on('error', (err) => {
+        reject(err);
+      });
+    });
+  } catch (error) {
+    console.error('Error reading log file:', error);
+    throw error;
+  }
+}
+
+// Aggiungi questa funzione per ottenere informazioni su un file
+async function getFileInfo(conn, remotePath) {
+  try {
+    const sftp = await new Promise((resolve, reject) => {
+      conn.sftp((err, sftpSession) => {
+        if (err) reject(err);
+        else resolve(sftpSession);
+      });
+    });
+
+    return new Promise((resolve, reject) => {
+      sftp.stat(remotePath, (err, stats) => {
+        if (err) reject(err);
+        else resolve({
+          size: stats.size,
+          modified: new Date(stats.mtime * 1000).toISOString(),
+          isDirectory: stats.isDirectory(),
+          isFile: stats.isFile()
+        });
+      });
+    });
+  } catch (error) {
+    console.error('Error getting file info:', error);
+    throw error;
+  }
 }
