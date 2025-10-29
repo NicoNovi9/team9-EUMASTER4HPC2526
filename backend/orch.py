@@ -25,7 +25,7 @@ def prepare_monitoring():
     pushgateway_job_id = None
     
     if pushgateway_running:
-        print("✓ Pushgateway job already running")
+        print("Pushgateway job already running")
         pushgateway_job_id = pushgateway_running.split()[0]
     else:
         push_result = subprocess.run(['sbatch', 'pushgateway_service.sh'], capture_output=True, text=True)
@@ -34,7 +34,7 @@ def prepare_monitoring():
         if "Submitted batch job" in output:
             pushgateway_job_id = output.split()[-1]
         else:
-            print("❌ Failed to submit pushgateway job")
+            print("Failed to submit pushgateway job")
             return
 
         # Wait for Pushgateway to be RUNNING
@@ -44,7 +44,7 @@ def prepare_monitoring():
                 ['squeue', '-j', pushgateway_job_id, '-o', '%T', '-h'],
                 capture_output=True, text=True).stdout.strip()
             if squeue_output == "RUNNING":
-                print("✓ Pushgateway is RUNNING!")
+                print("Pushgateway is RUNNING!")
                 break
             else:
                 print(f"  Current state: {squeue_output}, waiting...")
@@ -57,7 +57,7 @@ def prepare_monitoring():
     prometheus_job_id = None
 
     if prometheus_running:
-        print("✓ Prometheus job already running")
+        print("Prometheus job already running")
         prometheus_job_id = prometheus_running.split()[0]
     else:
         prom_submit = subprocess.run(['sbatch', 'monitoring_stack.sh'],
@@ -67,7 +67,7 @@ def prepare_monitoring():
         if "Submitted batch job" in output:
             prometheus_job_id = output.split()[-1]
         else:
-            print("x Failed to submit Prometheus job")
+            print("Failed to submit Prometheus job")
             return
         
         # Wait for Prometheus to be RUNNING before starting Grafana
@@ -105,7 +105,7 @@ if __name__ == "__main__":
         print(f"Error: Invalid JSON: {e}")
         sys.exit(1)
     
-    prepare_monitoring()
+    # prepare_monitoring()
 
     # Deploy Ollama server
     print("Deploying Ollama server...")

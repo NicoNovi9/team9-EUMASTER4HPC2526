@@ -1,0 +1,22 @@
+# Requirements for orch.py and related services
+# Python 3.x required
+
+# Web framework for client service
+flask>=2.3.0
+
+# HTTP requests library for API calls
+requests>=2.31.0
+
+# JSON support (built-in, but explicit dependencies)
+# json - standard library
+# subprocess - standard library
+# os - standard library
+# time - standard library
+# sys - standard library
+
+# Additional dependencies for proper SSL/TLS support
+idna>=3.4
+charset-normalizer>=3.3.0
+
+# Optional but recommended for production
+werkzeug>=2.3.0
