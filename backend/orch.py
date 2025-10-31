@@ -112,15 +112,18 @@ if __name__ == "__main__":
     ollamaService.setup_ollama(data)
 
     # Wait and deploy client
-    print("Waiting 15 seconds...")
-    time.sleep(15)
+    print("Waiting 50 seconds...")
+    time.sleep(50)
 
     print("Deploying client service...")
     clientServiceHandler.setup_client_service(data)
-    #todo substitute with the correct json parsing
 
-    # querying ollama by testClientService
-    print("Deployment complete. Test with: python3 client/testClientService.py")
+    print("\nDeployment complete. Starting test queries...")
     subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", "idna", "charset_normalizer"])
-    for i in range(30):
-        testClientService.query()
+    
+    # Extract model name from recipe
+    model_name = data.get('job', {}).get('service', {}).get('model', 'llama2')
+    print(f"Using model from recipe: {model_name}")
+    
+    # Simple test call - testClientService handles everything
+    testClientService.run_benchmark(num_queries=30, model=model_name)

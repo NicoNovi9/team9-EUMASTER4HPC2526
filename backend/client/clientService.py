@@ -90,27 +90,6 @@ def query():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/simple-test', methods=['GET'])
-def simple_test():
-    """Simple test endpoint - asks a basic question"""
-    prompt = "What is artificial intelligence? Please explain in one paragraph."
-    
-    print(f"Running simple test with prompt: {prompt}")
-    
-    response = client_service.query_ollama(prompt)
-    
-    # Format response for easy reading
-    if 'response' in response:
-        return jsonify({
-            "prompt": prompt,
-            "response": response['response'],
-            "response_length": len(response['response']),
-            "request_time": response.get('request_time', 0),
-            "model": response.get('model', 'unknown')
-        })
-    else:
-        return jsonify({"error": "Failed to get response", "details": response}), 500
-
 if __name__ == '__main__':
     print("Starting Ollama Client Service...")
     print(f"Ollama server: {client_service.ollama_host}:{client_service.ollama_port}")
