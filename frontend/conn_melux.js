@@ -310,6 +310,7 @@ python /home/users/${envParams.username}/orch.py /home/users/${envParams.usernam
     const filesToUpload = [
       { local: 'job.sh', remote: 'job.sh' },
       { local: '../backend/orch.py', remote: 'orch.py' },
+      { local: '../backend/requirements.txt', remote: 'requirements.txt' },
       { local: '../backend/client/clientService.py', remote: 'client/clientService.py' },
       { local: '../backend/client/clientServiceHandler.py', remote: 'client/clientServiceHandler.py' },
       { local: '../backend/client/testClientService.py', remote: 'client/testClientService.py' },
