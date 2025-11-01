@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>{{FILE_NAME}} - Log Viewer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: 'Monaco', 'Courier New', monospace;
+      background: #1e1e1e;
+      color: #d4d4d4;
+    }
+    .header {
+      background: #2c3e50;
+      color: white;
+      padding: 15px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    .header-left h1 {
+      font-size: 18px;
+      margin-bottom: 5px;
+    }
+    .header-left .meta {
+      font-size: 12px;
+      opacity: 0.7;
+    }
+    .btn-back {
+      padding: 8px 16px;
+      background: #34495e;
+      color: white;
+      text-decoration: none;
+      border-radius: 5px;
+      font-size: 14px;
+    }
+    .btn-back:hover {
+      background: #2c3e50;
+    }
+    .content {
+      padding: 20px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      font-size: 13px;
+      line-height: 1.6;
+      max-width: 100%;
+      overflow-x: auto;
+    }
+    .line-number {
+      color: #858585;
+      user-select: none;
+      padding-right: 20px;
+      border-right: 1px solid #3e3e3e;
+      margin-right: 20px;
+    }
+    .error-line {
+      background: rgba(255, 0, 0, 0.1);
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <h1>📄 {{FILE_NAME}}</h1>
+      <div class="meta">
+        {{FILE_META}}
+      </div>
+    </div>
+    <a href="{{BACK_LINK}}" class="btn-back">← Back</a>
+  </div>
+  <div class="content">{{FILE_CONTENT}}</div>
+</body>
+</html>

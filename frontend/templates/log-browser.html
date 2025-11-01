@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Logs Browser - MeluXina</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f5f5f5;
+    }
+    .header {
+      background: #2c3e50;
+      color: white;
+      padding: 20px 30px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .header h1 {
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+    .breadcrumb {
+      font-size: 14px;
+      opacity: 0.8;
+    }
+    .breadcrumb a {
+      color: #3498db;
+      text-decoration: none;
+    }
+    .breadcrumb a:hover {
+      text-decoration: underline;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 30px auto;
+      padding: 0 20px;
+    }
+    .item {
+      background: white;
+      border-radius: 8px;
+      padding: 15px 20px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      transition: all 0.2s;
+    }
+    .item:hover {
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      transform: translateY(-2px);
+    }
+    .item-left {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      flex: 1;
+    }
+    .icon {
+      font-size: 24px;
+      width: 40px;
+      text-align: center;
+    }
+    .item-info {
+      flex: 1;
+    }
+    .item-name {
+      font-weight: 600;
+      font-size: 16px;
+      color: #2c3e50;
+      margin-bottom: 5px;
+    }
+    .item-meta {
+      font-size: 13px;
+      color: #7f8c8d;
+    }
+    .item-actions {
+      display: flex;
+      gap: 10px;
+    }
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .btn-view {
+      background: #3498db;
+      color: white;
+    }
+    .btn-view:hover {
+      background: #2980b9;
+    }
+    .btn-download {
+      background: #27ae60;
+      color: white;
+    }
+    .btn-download:hover {
+      background: #229954;
+    }
+    .empty {
+      text-align: center;
+      padding: 60px 20px;
+      color: #95a5a6;
+    }
+    .empty-icon {
+      font-size: 64px;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>📋 Logs Browser</h1>
+    <div class="breadcrumb">
+      {{BREADCRUMB}}
+    </div>
+  </div>
+  
+  <div class="container">
+    {{CONTENT}}
+  </div>
+</body>
+</html>
