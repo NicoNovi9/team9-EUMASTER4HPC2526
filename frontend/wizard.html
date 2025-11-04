@@ -6,13 +6,17 @@
     <style>
         .wizard-step { display: none; }
         .wizard-step.active { display: block; }
-        input, select { display: block; margin: 10px 0; width: 300px; }
+        input, select, textarea { display: block; margin: 10px 0; width: 300px; }
+        textarea { height: 100px; resize: vertical; }
         button { margin: 5px; padding: 8px 16px; }
+        .switch-container { display: flex; align-items: center; margin: 15px 0; }
+        .switch-container label { margin-right: 10px; width: auto; }
     </style>
 </head>
 <body>
     <h1 id="heading">Job Configuration</h1>
         <button onclick="window.open('/logs', '_blank')">View Logs</button>
+
 
     
     <div class="wizard-step active" data-step="1">
@@ -20,6 +24,7 @@
         <button onclick="useDefaults()">Use Defaults</button>
         <label>Job Name: <input type="text" id="jobName" value="ollama_inference_job"></label>
     </div>
+
 
     <div class="wizard-step" data-step="2">
         <h2>Step 2: Infrastructure</h2>
@@ -30,6 +35,7 @@
         <label>Time: <input type="text" id="time" value="00:05:00"></label>
     </div>
 
+
     <div class="wizard-step" data-step="3">
         <h2>Step 3: Service</h2>
         <label>Type: <select id="serviceType"><option value="inference" selected>Inference</option><option value="training">Training</option></select></label>
@@ -37,38 +43,56 @@
         <label>Precision: <select id="precision"><option value="fp16" selected>FP16</option><option value="fp32">FP32</option><option value="int8">INT8</option></select></label>
         <label>Clients: <input type="number" id="nClients" value="2" min="1"></label>
         <label>Requests: <input type="number" id="nRequests" value="5" min="1"></label>
+        <label>Prompt: <textarea id="prompt" placeholder="Enter the prompt for the LLM..."></textarea></label>
     </div>
+
 
     <div class="wizard-step" data-step="4">
         <h2>Step 4: Review</h2>
+        <div class="switch-container">
+            <label for="uploadSourceFiles">Do you want to upload the source files?</label>
+            <input type="checkbox" id="uploadSourceFiles" checked>
+        </div>
         <pre id="jsonOutput"></pre>
         <button onclick="copyJSON()">Copy</button>
         <button onclick="callBenchmark()">Start Benchmark</button>
     </div>
+
 
     <div>
         <button id="prevBtn" onclick="changeStep(-1)" style="display:none">Previous</button>
         <button id="nextBtn" onclick="changeStep(1)">Next</button>
     </div>
 
+
 <script>
 let currentStep = 1;
 const totalSteps = 4;
 
+
 const defaults = {
     jobName: "ollama_inference_job", partition: "gpu", account: "p200981",
     nodes: 1, memory: 64, time: "00:05:00", serviceType: "inference",
-    model: "llama2", precision: "fp16", nClients: 2, nRequests: 5
+    model: "llama2", precision: "fp16", nClients: 2, nRequests: 5,
+    prompt: "", uploadSourceFiles: true
 };
+
 
 async function useDefaults() {
     Object.keys(defaults).forEach(key => {
         const el = document.getElementById(key);
-        if (el) el.value = defaults[key];
+        if (el) {
+            if (el.type === 'checkbox') {
+                el.checked = defaults[key];
+            } else {
+                el.value = defaults[key];
+            }
+        }
     });
     await callBenchmark(generateConfigObject());
     alert('✓ Defaults saved to recipe.json!');
 }
+
 
 function generateConfigObject() {
     return {
@@ -86,22 +110,27 @@ function generateConfigObject() {
                 model: document.getElementById('model').value,
                 precision: document.getElementById('precision').value,
                 n_clients: parseInt(document.getElementById('nClients').value),
-                n_requests_per_client: parseInt(document.getElementById('nRequests').value)
+                n_requests_per_client: parseInt(document.getElementById('nRequests').value),
+                prompt: document.getElementById('prompt').value
             }
         }
     };
 }
 
+
 async function callBenchmark(config) {
     if(config === undefined) config = generateConfigObject();
     document.getElementById('heading').textContent = 'Submitting your Job, please wait for resource allocation...';
     try {
+        console.log("is allSending true????",document.getElementById('uploadSourceFiles').checked);
         console.log('calling callBenchmark');
+        config["uploadSourceFiles"]=document.getElementById('uploadSourceFiles').checked;
         const response = await fetch('/startbenchmark', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(config)
+            body: JSON.stringify(config),
         });
+        
         const result = await response.json();
         if (!result.success) alert('Error: ' + result.error);
         if(result.success) {alert("Ollama_jobId: "+ result.ollamaJobID+" Correctly submitted! You can now monitor the metrics dashboard looking up IP: "+ result.ipComputeNodeService 
@@ -113,6 +142,7 @@ async function callBenchmark(config) {
         return { success: false };
     }
 }
+
 
 async function changeStep(direction) {
     const newStep = currentStep + direction;
@@ -132,20 +162,25 @@ async function changeStep(direction) {
     document.getElementById('nextBtn').textContent = 'Next';
     document.getElementById('nextBtn').style.display = currentStep === totalSteps ? 'none' : 'block';
 
+
     
     if (currentStep === totalSteps) showJSON();
 }
 
+
 function showJSON() {
     document.getElementById('jsonOutput').textContent = JSON.stringify(generateConfigObject(), null, 2);
 }
+
 
 function copyJSON() {
     navigator.clipboard.writeText(document.getElementById('jsonOutput').textContent);
     alert('✓ Copied!');
 }
 
+
 </script>
+
 
 </body>
 </html>

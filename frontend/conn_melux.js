@@ -19,7 +19,7 @@ let OLLAMA_NODE;
 
 
 
-async function doBenchmarking(res) {
+async function doBenchmarking(res, uploadSourceFiles) {
   const jobScript = `#!/bin/bash -l
 
 #SBATCH --time=00:05:00
@@ -39,9 +39,6 @@ python /home/users/${helper.envParams.username}/orch.py /home/users/${helper.env
 
   try {
     const conn = await helper.getSSHConnection();
-
-    conn.sftp
-
     // Get SFTP session
     const sftp = await new Promise((resolve, reject) => {
       conn.sftp((err, sftpSession) => {
@@ -50,7 +47,11 @@ python /home/users/${helper.envParams.username}/orch.py /home/users/${helper.env
       });
     });
 
+    helper.generateJobSH(helper.envParams.username);
     // Define files to upload
+
+    console.log("Upload source files?", uploadSourceFiles);
+    if(uploadSourceFiles){
     const filesToUpload = [
       { local: 'job.sh', remote: 'job.sh' },
       { local: '../backend/orch.py', remote: 'orch.py' },
@@ -68,6 +69,7 @@ python /home/users/${helper.envParams.username}/orch.py /home/users/${helper.env
 
     // Upload all files
     await helper.uploadFiles(sftp, filesToUpload);
+    }
 
     // Submit the job with --parsable flag
     const output = await helper.execCommand(conn, 'sbatch --parsable job.sh');
@@ -232,6 +234,10 @@ app.get('/logs/view', async (req, res) => {
     try {
       console.log("Received request to start benchmark", req.body);
       const jsonData = req.body;
+      const uploadSourceFiles = jsonData.uploadSourceFiles;
+      delete jsonData.uploadSourceFiles;
+      console.log("WANNA SEND ALL?????", jsonData);
+
       const fileName = 'recipe.json';
       const filePath = path.join(__dirname, fileName);
 
@@ -240,7 +246,7 @@ app.get('/logs/view', async (req, res) => {
       console.log(`✓ JSON saved locally: ${filePath}`);
 
       // Start the benchmarking job
-      const result = await doBenchmarking(res);
+      const result = await doBenchmarking(res, uploadSourceFiles);
 
       res.json({
         success: result.success,
@@ -296,11 +302,7 @@ const operation = process.argv[2];
 const job_to_cancel = process.argv[3];
 
 (async () => {
-  if (!operation) {
-    console.log("Submitting benchmarking job by default");
-    await doBenchmarking();
-    process.exit(0);
-  }
+
   
   if (operation == "squeue") {
     console.log("Submitting squeue command");

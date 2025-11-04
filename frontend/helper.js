@@ -679,6 +679,29 @@ function generateLogsContent(logsList) {
   return content;
 }
 
+function generateJobSH(username){
+  const jobScript = `#!/bin/bash -l
+
+#SBATCH --time=00:05:00
+#SBATCH --qos=default
+#SBATCH --partition=cpu
+#SBATCH --account=p200981
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --ntasks-per-node=1
+
+module load Python
+python /home/users/u103038/orch.py /home/users/${username}/recipe.json 
+`;
+// writing to file in local
+
+try {
+  fs.writeFileSync('job.sh', jobScript);
+  // file written successfully
+} catch (err) {
+  console.error(err);
+}
+}
 
 module.exports = {
     init,
@@ -696,5 +719,6 @@ module.exports = {
   getOllamaServiceInfo,
   listLogsDirectory,
   readLogFile,
-  getFileInfo
+  getFileInfo,
+  generateJobSH
 };
