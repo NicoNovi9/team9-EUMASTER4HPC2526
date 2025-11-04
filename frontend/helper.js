@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const consts = require('./constants.js');
 const net = require('net');
+const pLimit = require('p-limit');
 
 
 const { Client } = require('ssh2');
@@ -369,125 +370,127 @@ async function getOllamaServiceInfo(conn, username, options = {}) {
 
   return attemptGetServiceInfo(0);
 }
+// ===============SSH LOGS HELPERS================ //
+
+
+const limit = pLimit(3); // max 3 concurrent SFTP operations
+let cachedSftp = null;
 
 /**
- * List logs directory recursively
+ * Reuse a single SFTP session
+ */
+async function getSftp(conn) {
+  if (cachedSftp) return cachedSftp;
+  cachedSftp = await new Promise((resolve, reject) => {
+    conn.sftp((err, sftp) => {
+      if (err) reject(err);
+      else resolve(sftp);
+    });
+  });
+  return cachedSftp;
+}
+
+/**
+ * Generic retry wrapper with exponential backoff
+ */
+async function withRetry(fn, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err.message.includes('Channel open failure') && i < retries - 1) {
+        const delay = 1000 * (i + 1);
+        console.warn(`⚠️ SFTP channel failed, retrying in ${delay}ms...`);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+/**
+ * List files and directories in a given path (reusing SFTP session)
  */
 async function listLogsDirectory(conn, remotePath, relativePath = '') {
-  try {
-    const sftp = await new Promise((resolve, reject) => {
-      conn.sftp((err, sftpSession) => {
-        if (err) reject(err);
-        else resolve(sftpSession);
+  return limit(async () =>
+    withRetry(async () => {
+      const sftp = await getSftp(conn);
+
+      const items = await new Promise((resolve, reject) => {
+        sftp.readdir(remotePath, (err, list) => {
+          if (err) reject(err);
+          else resolve(list);
+        });
       });
-    });
 
-    const items = await new Promise((resolve, reject) => {
-      sftp.readdir(remotePath, (err, list) => {
-        if (err) reject(err);
-        else resolve(list);
-      });
-    });
+      const result = { files: [], directories: [] };
 
-    const result = {
-      files: [],
-      directories: []
-    };
-
-    for (const item of items) {
-      const fullPath = `${remotePath}/${item.filename}`;
-      const relPath = relativePath ? `${relativePath}/${item.filename}` : item.filename;
-
-      if (item.attrs.isDirectory()) {
-        result.directories.push({
+      for (const item of items) {
+        const relPath = relativePath ? `${relativePath}/${item.filename}` : item.filename;
+        const entry = {
           name: item.filename,
           path: relPath,
           size: item.attrs.size,
           modified: new Date(item.attrs.mtime * 1000).toISOString()
-        });
-      } else {
-        result.files.push({
-          name: item.filename,
-          path: relPath,
-          size: item.attrs.size,
-          modified: new Date(item.attrs.mtime * 1000).toISOString(),
-          extension: path.extname(item.filename)
-        });
+        };
+
+        if (item.attrs.isDirectory()) result.directories.push(entry);
+        else result.files.push({ ...entry, extension: path.extname(item.filename) });
       }
-    }
 
-    result.directories.sort((a, b) => a.name.localeCompare(b.name));
-    result.files.sort((a, b) => a.name.localeCompare(b.name));
-
-    return result;
-  } catch (error) {
-    console.error('Error listing logs directory:', error);
-    throw error;
-  }
+      result.directories.sort((a, b) => a.name.localeCompare(b.name));
+      result.files.sort((a, b) => a.name.localeCompare(b.name));
+      return result;
+    })
+  );
 }
 
 /**
- * Read log file content
+ * Read the content of a remote log file (reusing SFTP)
  */
 async function readLogFile(conn, remotePath) {
-  try {
-    const sftp = await new Promise((resolve, reject) => {
-      conn.sftp((err, sftpSession) => {
-        if (err) reject(err);
-        else resolve(sftpSession);
-      });
-    });
+  return limit(async () =>
+    withRetry(async () => {
+      const sftp = await getSftp(conn);
+      return new Promise((resolve, reject) => {
+        const readStream = sftp.createReadStream(remotePath);
+        let content = '';
 
-    return new Promise((resolve, reject) => {
-      const readStream = sftp.createReadStream(remotePath);
-      let content = '';
-
-      readStream.on('data', (chunk) => {
-        content += chunk.toString('utf8');
+        readStream.on('data', (chunk) => (content += chunk.toString('utf8')));
+        readStream.on('end', () => resolve(content));
+        readStream.on('error', (err) => reject(err));
       });
-
-      readStream.on('end', () => {
-        resolve(content);
-      });
-
-      readStream.on('error', (err) => {
-        reject(err);
-      });
-    });
-  } catch (error) {
-    console.error('Error reading log file:', error);
-    throw error;
-  }
+    })
+  );
 }
 
 /**
- * Get file information
+ * Get metadata about a file or directory (reusing SFTP)
  */
 async function getFileInfo(conn, remotePath) {
-  try {
-    const sftp = await new Promise((resolve, reject) => {
-      conn.sftp((err, sftpSession) => {
-        if (err) reject(err);
-        else resolve(sftpSession);
-      });
-    });
+  return limit(async () =>
+    withRetry(async () => {
+      const sftp = await getSftp(conn);
 
-    return new Promise((resolve, reject) => {
-      sftp.stat(remotePath, (err, stats) => {
-        if (err) reject(err);
-        else resolve({
-          size: stats.size,
-          modified: new Date(stats.mtime * 1000).toISOString(),
-          isDirectory: stats.isDirectory(),
-          isFile: stats.isFile()
+      return new Promise((resolve, reject) => {
+        sftp.stat(remotePath, (err, stats) => {
+          if (err) reject(err);
+          else
+            resolve({
+              size: stats.size,
+              modified: new Date(stats.mtime * 1000).toISOString(),
+              isDirectory: stats.isDirectory(),
+              isFile: stats.isFile()
+            });
         });
       });
-    });
-  } catch (error) {
-    console.error('Error getting file info:', error);
-    throw error;
-  }
+    })
+  );
 }
+
+
+/// --------------HTML HELPERS ---------------  //
 
 /**
  * Simple template rendering function
@@ -689,6 +692,10 @@ function generateJobSH(username){
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --ntasks-per-node=1
+#SBATCH --output=/home/users/${username}/output/logs/%x_%j.out
+#SBATCH --error=/home/users/${username}/output/logs/%x_%j.err
+
+mkdir -p /home/users/${username}/output/logs
 
 module load Python
 python /home/users/u103038/orch.py /home/users/${username}/recipe.json 
