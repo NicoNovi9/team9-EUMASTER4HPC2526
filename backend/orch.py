@@ -125,5 +125,5 @@ if __name__ == "__main__":
     model_name = data.get('job', {}).get('service', {}).get('model', 'llama2')
     print(f"Using model from recipe: {model_name}")
     
-    # Simple test call - testClientService handles everything
-    testClientService.run_benchmark(num_queries=30, model=model_name)
+    # Use parallel benchmark for faster testing
+    testClientService.run_benchmark(num_queries=30, model=model_name, parallel=True)

@@ -160,13 +160,59 @@ def query(prompt="hello how are you?", model="mistral"):
         return error
 
 
-def run_benchmark(num_queries=30, delay=1, model="llama2"):
+def run_benchmark(num_queries=30, delay=1, model="llama2", parallel=False):
     """Run multiple test queries to benchmark the Ollama service"""
     print("\n" + "="*60)
     print(f"STARTING BENCHMARK: {num_queries} queries")
     print(f"Model: {model}")
+    print(f"Mode: {'PARALLEL' if parallel else 'SEQUENTIAL'}")
     print("="*60 + "\n")
     
+    if parallel:
+        # Use client service's parallel benchmark endpoint
+        try:
+            client_ip = None
+            # Try to load client IP
+            import glob
+            client_files = sorted(glob.glob('output/client_ip_*.txt'), key=os.path.getmtime, reverse=True)
+            if client_files:
+                with open(client_files[0], 'r') as f:
+                    client_ip = f.read().strip()
+            
+            if client_ip:
+                url = f"http://{client_ip}:5000/benchmark"
+                payload = {
+                    "num_queries": num_queries,
+                    "model": model,
+                    "parallel": True
+                }
+                
+                print(f"Sending parallel benchmark request to {url}...")
+                response = requests.post(url, json=payload, timeout=300)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    print("\n" + "="*60)
+                    print("PARALLEL BENCHMARK SUMMARY")
+                    print("="*60)
+                    print(f"Total queries: {result['total_queries']}")
+                    print(f"Successful: {result['successful']}")
+                    print(f"Failed: {result['failed']}")
+                    print(f"Total time: {result['total_time']:.2f}s")
+                    print(f"Avg request time: {result['avg_request_time']:.2f}s")
+                    print(f"Queries/sec: {result['queries_per_second']:.2f}")
+                    print("="*60 + "\n")
+                    return result
+                else:
+                    print(f"Benchmark endpoint error: {response.status_code}")
+                    print("Falling back to sequential mode...")
+            else:
+                print("Client IP not found, using direct Ollama connection...")
+        except Exception as e:
+            print(f"Parallel benchmark failed: {e}")
+            print("Falling back to sequential mode...")
+    
+    # Sequential mode (original implementation)
     successful_queries = 0
     failed_queries = 0
     total_tps = 0
@@ -210,8 +256,10 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "benchmark":
         # Run benchmark mode
         num_queries = int(sys.argv[2]) if len(sys.argv) > 2 else 30
-        result = run_benchmark(num_queries)
-        sys.exit(0 if result['failed'] == 0 else 1)
+        parallel = "--parallel" in sys.argv or "-p" in sys.argv
+        result = run_benchmark(num_queries, parallel=parallel)
+        failed = result.get('failed', 0)
+        sys.exit(0 if failed == 0 else 1)
     else:
         # Run single query
         result = query()
