@@ -30,11 +30,29 @@ The system is configuration‑driven (JSON/YAML): it orchestrates services, clie
 - Examples: Ollama (LLM serving), Qdrant (for KNN retrieval benchmarks with FAISS).
 
 ### Monitoring (optional)
-- A separate service container (e.g., Prometheus) can be integrated to collect CPU/GPU/memory metrics.
-- Should be started before client jobs to capture full run metrics.
+### Monitoring 
+
+- **Monitoring Stack**: A `monitoring_stack` service runs Prometheus and Grafana together on a dedicated compute node via SLURM job submission
+- *Automatic Detection*: The system automatically detects which compute node is running the monitoring stack using `squeue` commands
+- *Prometheus Health Checks*: The application waits for Prometheus to become ready (checking `http://{node}:9090/-/healthy`) with configurable retries before proceeding
+- *SSH Tunnel*: An SSH tunnel is automatically established to forward Grafana from the compute node to `localhost:3000` on your local machine for easy access
+- *Pushgateway Integration*: A pushgateway service collects metrics from ephemeral jobs and forwards them to Prometheus
+- *Startup Order*: The monitoring stack starts before the benchmark jobs to ensure all metrics are captured from the beginning
+
 
 ### Logging
 - Services are configured to log automatically when launched via Apptainer (stdout/stderr redirected to files under `output/logs/`).
+- *SLURM Native Logging*: Services launched via SLURM automatically capture stdout and stderr to `.out` and `.err` files in the `output/logs/` directory
+- *Hierarchical Structure*: Logs are organized in subdirectories under `/home/users/{username}/output/logs/` based on job structure
+- *Web-Based Log Browser*: An integrated web interface at `/logs` endpoint allows browsing, viewing, and downloading log files exploiting the current active SSH connection to Meluxina
+- *Real-Time Access*: Log files can be viewed in real-time through the web interface
+- *File Types*: 
+  - `.out` files contain standard output (stdout)
+  - `.err` files contain standard error (stderr)
+  - Both are created automatically by SLURM for each job
+
+
+
 
 ### Testing
 - Use `python3 client/testClientService.py` to verify the full stack after deployment.
