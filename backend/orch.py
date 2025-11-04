@@ -4,6 +4,8 @@ import subprocess
 import os
 import json
 import time
+import glob
+import requests
 import ollamaService
 import client.clientServiceHandler as clientServiceHandler
 import client.testClientService as testClientService
@@ -118,12 +120,54 @@ if __name__ == "__main__":
     print("Deploying client service...")
     clientServiceHandler.setup_client_service(data)
 
+    # Wait for client service to be ready
+    # Wait for client service to be ready
+    print("\nWaiting for client service to be ready...")
+    max_wait = 300  # 5 minutes
+    elapsed = 0
+    
+    while elapsed < max_wait:
+        client_files = glob.glob('output/client_ip_*.txt')
+        
+        if client_files:
+            with open(sorted(client_files, key=os.path.getmtime)[-1], 'r') as f:
+                client_ip = f.read().strip()
+            
+            try:
+                # Check both /health and /benchmark endpoints
+                health_resp = requests.get(f"http://{client_ip}:5000/health", timeout=3)
+                benchmark_resp = requests.post(
+                    f"http://{client_ip}:5000/benchmark",
+                    json={"num_queries": 1, "model": "test", "parallel": False},
+                    timeout=5
+                )
+                
+                # If both respond (even with errors), Flask is fully loaded
+                if health_resp.status_code and benchmark_resp.status_code:
+                    print(f"✓ Client ready at {client_ip}:5000")
+                    break
+            except:
+                pass
+        
+        print(f"  Waiting... ({elapsed}s)")
+        time.sleep(5)
+        elapsed += 5
+    
+    if elapsed >= max_wait:
+        print("ERROR: Client service timeout")
+        sys.exit(1)
+
     print("\nDeployment complete. Starting test queries...")
     subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", "idna", "charset_normalizer"])
     
-    # Extract model name from recipe
+    # Extract parameters from recipe
     model_name = data.get('job', {}).get('service', {}).get('model', 'llama2')
-    print(f"Using model from recipe: {model_name}")
+    num_queries = data.get('job', {}).get('service', {}).get('n_requests_per_client', 30)
     
-    # Use parallel benchmark for faster testing
-    testClientService.run_benchmark(num_queries=30, model=model_name, parallel=True)
+    print(f"Model: {model_name}, Queries: {num_queries}")
+    
+    print("Waiting 20 seconds...")
+    time.sleep(20)
+
+    # Run parallel benchmark
+    testClientService.run_benchmark(num_queries, model_name)

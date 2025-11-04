@@ -1,27 +1,13 @@
 #!/usr/bin/env python3
 
 import requests
-import json
-import time
 import sys
 import os
 import glob
 
 
-def _load_ollama_ip():
-    if os.path.exists('output/ollama_ip.txt'):
-        with open('output/ollama_ip.txt', 'r') as f:
-            return f.read().strip()
-    
-    ollama_files = sorted(glob.glob('output/ollama_ip_*.txt'), key=os.path.getmtime, reverse=True)
-    if ollama_files:
-        with open(ollama_files[0], 'r') as f:
-            return f.read().strip()
-    
-    raise FileNotFoundError("No ollama_ip file found")
-
-
 def _load_pushgateway_ip():
+    """Load Pushgateway IP from file"""
     try:
         with open("output/pushgateway_data/pushgateway_ip.txt", "r") as f:
             return f.read().strip()
@@ -29,18 +15,24 @@ def _load_pushgateway_ip():
         return None
 
 
-def _calculate_tokens(response_data, text):
+def _calculate_tokens(response_data):
+    """Calculate token count from response"""
     if 'eval_count' in response_data:
         return response_data['eval_count']
     elif 'prompt_eval_count' in response_data:
         return response_data['prompt_eval_count']
-    else:
-        return len(text.split())
+    elif 'response' in response_data:
+        return len(response_data['response'].split())
+    return 0
 
 
-def push_tps_to_pushgateway(tps_value, pushgateway_ip, client_id, model="unknown"):
+def _push_to_pushgateway(tps, model, client_id, pushgateway_ip):
+    """Push TPS metric to Pushgateway"""
+    if not pushgateway_ip:
+        return
+    
     metric_data = f"""# TYPE tokens_per_second gauge
-tokens_per_second{{client_id="{client_id}",model="{model}"}} {tps_value}
+tokens_per_second{{client_id="{client_id}",model="{model}"}} {tps}
 """
     url = f"http://{pushgateway_ip}:9091/metrics/job/benchmark/instance/{client_id}"
     
@@ -51,221 +43,80 @@ tokens_per_second{{client_id="{client_id}",model="{model}"}} {tps_value}
             headers={'Content-Type': 'text/plain'},
             timeout=5
         )
-        
         if response.status_code == 200:
-            print(f"Pushed TPS={tps_value:.2f} to Pushgateway")
-        else:
-            print(f"Pushgateway error: {response.status_code}")
-    except requests.exceptions.RequestException as e:
-        print(f"Failed to push to Pushgateway: {e}")
+            print(f"  ✓ Pushed TPS={tps:.2f} to Pushgateway")
+    except Exception as e:
+        print(f"  Pushgateway push failed: {e}")
 
 
-def query(prompt="hello how are you?", model="mistral"):
-    print("\n" + "="*60)
-    print("OLLAMA QUERY")
-    print("="*60)
-    print(f"Prompt: {prompt[:50]}...")
-    print(f"Model: {model}")
+def run_benchmark(num_queries=30, model="llama2"):
+    """Run parallel benchmark via client service"""
+    print(f"\nPARALLEL BENCHMARK: {num_queries} queries\n")
     
     try:
-        ollama_ip = _load_ollama_ip()
-        print(f"Ollama IP: {ollama_ip}")
+        # Load client service IP
+        client_files = sorted(glob.glob('output/client_ip_*.txt'), key=lambda x: x, reverse=True)
+        if not client_files:
+            raise FileNotFoundError("No client_ip_*.txt found. Is client service running?")
         
-        ollama_url = f"http://{ollama_ip}:11434/api/generate"
+        with open(client_files[0], 'r') as f:
+            client_ip = f.read().strip()
         
-        payload = {
-            "model": model,
-            "prompt": prompt,
-            "stream": False
-        }
+        url = f"http://{client_ip}:5000/benchmark"
+        payload = {"num_queries": num_queries, "model": model, "parallel": True}
         
-        max_retries = 3
-        response_data = None
-        elapsed = 0
+        print(f"Sending request to {url}...")
+        response = requests.post(url, json=payload, timeout=600)
         
-        for attempt in range(max_retries):
-            try:
-                print(f"Attempt {attempt+1}/{max_retries}...")
-                start_time = time.time()
-                
-                response = requests.post(
-                    ollama_url,
-                    json=payload,
-                    timeout=60,
-                    headers={'Content-Type': 'application/json'}
-                )
-                
-                elapsed = time.time() - start_time
-                
-                if response.status_code == 200:
-                    response_data = response.json()
-                    print(f"Response received in {elapsed:.2f}s")
-                    break
-                else:
-                    print(f"Ollama error {response.status_code}")
-                    
-            except requests.exceptions.Timeout:
-                print(f"Timeout")
-            except requests.exceptions.RequestException as e:
-                print(f"Request error: {e}")
-            
-            if attempt < max_retries - 1:
-                wait_time = 2 ** attempt
-                print(f"Retrying in {wait_time}s...")
-                time.sleep(wait_time)
+        if response.status_code != 200:
+            raise Exception(f"HTTP {response.status_code}: {response.text}")
         
-        if not response_data:
-            error = {"error": f"Ollama unreachable after {max_retries} attempts"}
-            print(f"ERROR: {error['error']}")
-            print("="*60 + "\n")
-            return error
+        result = response.json()
         
-        if 'response' not in response_data:
-            error = {"error": "Invalid Ollama response"}
-            print(f"ERROR: {error['error']}")
-            print("="*60 + "\n")
-            return error
-        
-        text = response_data['response']
-        num_tokens = _calculate_tokens(response_data, text)
-        tps = num_tokens / elapsed if elapsed > 0 else 0
-        
-        print(f"Response completed")
-        print(f"Length: {len(text)} chars | Tokens: {num_tokens} | TPS: {tps:.2f}")
-        
+        # Calculate tokens and TPS for each result, push to Pushgateway
         pushgateway_ip = _load_pushgateway_ip()
-        if pushgateway_ip:
-            client_id = os.environ.get("CLIENT_ID", "client_direct")
-            push_tps_to_pushgateway(tps, pushgateway_ip, client_id, model)
-        else:
-            print("Pushgateway not configured")
+        total_tokens = 0
+        total_tps = 0
+        successful_with_response = 0
         
-        response_data['tps'] = tps
-        response_data['num_tokens'] = num_tokens
-        response_data['elapsed'] = elapsed
+        if 'results' in result:
+            for i, query_result in enumerate(result['results']):
+                if 'error' not in query_result and 'response' in query_result:
+                    num_tokens = _calculate_tokens(query_result)
+                    elapsed = query_result.get('request_time', 0)
+                    tps = num_tokens / elapsed if elapsed > 0 else 0
+                    
+                    total_tokens += num_tokens
+                    total_tps += tps
+                    successful_with_response += 1
+                    
+                    # Push to Pushgateway
+                    client_id = f"benchmark_query_{i}"
+                    _push_to_pushgateway(tps, model, client_id, pushgateway_ip)
         
+        avg_tps = total_tps / successful_with_response if successful_with_response > 0 else 0
+        
+        print("\n" + "="*60)
+        print("BENCHMARK RESULTS")
+        print("="*60)
+        print(f"Total queries:    {result['total_queries']}")
+        print(f"Successful:       {result['successful']}")
+        print(f"Failed:           {result['failed']}")
+        print(f"Total time:       {result['total_time']:.2f}s")
+        print(f"Avg request time: {result['avg_request_time']:.2f}s")
+        print(f"Total tokens:     {total_tokens}")
+        print(f"Avg TPS:          {avg_tps:.2f}")
+        print(f"Queries/sec:      {result['queries_per_second']:.2f}")
         print("="*60 + "\n")
         
-        return response_data
+        return result
         
-    except FileNotFoundError as e:
-        error = {"error": str(e)}
-        print(f"ERROR: {error['error']}")
-        print("="*60 + "\n")
-        return error
     except Exception as e:
-        error = {"error": str(e)}
         print(f"ERROR: {e}")
-        print("="*60 + "\n")
-        return error
-
-
-def run_benchmark(num_queries=30, delay=1, model="llama2", parallel=False):
-    """Run multiple test queries to benchmark the Ollama service"""
-    print("\n" + "="*60)
-    print(f"STARTING BENCHMARK: {num_queries} queries")
-    print(f"Model: {model}")
-    print(f"Mode: {'PARALLEL' if parallel else 'SEQUENTIAL'}")
-    print("="*60 + "\n")
-    
-    if parallel:
-        # Use client service's parallel benchmark endpoint
-        try:
-            client_ip = None
-            # Try to load client IP
-            import glob
-            client_files = sorted(glob.glob('output/client_ip_*.txt'), key=os.path.getmtime, reverse=True)
-            if client_files:
-                with open(client_files[0], 'r') as f:
-                    client_ip = f.read().strip()
-            
-            if client_ip:
-                url = f"http://{client_ip}:5000/benchmark"
-                payload = {
-                    "num_queries": num_queries,
-                    "model": model,
-                    "parallel": True
-                }
-                
-                print(f"Sending parallel benchmark request to {url}...")
-                response = requests.post(url, json=payload, timeout=300)
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    print("\n" + "="*60)
-                    print("PARALLEL BENCHMARK SUMMARY")
-                    print("="*60)
-                    print(f"Total queries: {result['total_queries']}")
-                    print(f"Successful: {result['successful']}")
-                    print(f"Failed: {result['failed']}")
-                    print(f"Total time: {result['total_time']:.2f}s")
-                    print(f"Avg request time: {result['avg_request_time']:.2f}s")
-                    print(f"Queries/sec: {result['queries_per_second']:.2f}")
-                    print("="*60 + "\n")
-                    return result
-                else:
-                    print(f"Benchmark endpoint error: {response.status_code}")
-                    print("Falling back to sequential mode...")
-            else:
-                print("Client IP not found, using direct Ollama connection...")
-        except Exception as e:
-            print(f"Parallel benchmark failed: {e}")
-            print("Falling back to sequential mode...")
-    
-    # Sequential mode (original implementation)
-    successful_queries = 0
-    failed_queries = 0
-    total_tps = 0
-    
-    for i in range(num_queries):
-        print(f"\n--- Query {i+1}/{num_queries} ---")
-        result = query(model=model)
-        
-        if "error" in result:
-            print(f"✗ Query {i+1} failed: {result['error']}")
-            failed_queries += 1
-        else:
-            print(f"✓ Query {i+1} succeeded | TPS: {result.get('tps', 0):.2f}")
-            successful_queries += 1
-            total_tps += result.get('tps', 0)
-        
-        if i < num_queries - 1:  # Don't sleep after the last query
-            time.sleep(delay)
-    
-    # Summary
-    print("\n" + "="*60)
-    print("BENCHMARK SUMMARY")
-    print("="*60)
-    print(f"Total queries: {num_queries}")
-    print(f"Successful: {successful_queries}")
-    print(f"Failed: {failed_queries}")
-    if successful_queries > 0:
-        avg_tps = total_tps / successful_queries
-        print(f"Average TPS: {avg_tps:.2f}")
-    print("="*60 + "\n")
-    
-    return {
-        "total": num_queries,
-        "successful": successful_queries,
-        "failed": failed_queries,
-        "avg_tps": total_tps / successful_queries if successful_queries > 0 else 0
-    }
+        return {"error": str(e), "total": num_queries, "successful": 0, "failed": num_queries}
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "benchmark":
-        # Run benchmark mode
-        num_queries = int(sys.argv[2]) if len(sys.argv) > 2 else 30
-        parallel = "--parallel" in sys.argv or "-p" in sys.argv
-        result = run_benchmark(num_queries, parallel=parallel)
-        failed = result.get('failed', 0)
-        sys.exit(0 if failed == 0 else 1)
-    else:
-        # Run single query
-        result = query()
-        
-        if "error" in result:
-            sys.exit(1)
-        else:
-            print(f"Test completed successfully | TPS: {result.get('tps', 0):.2f}")
-            sys.exit(0)
+    num_queries = int(sys.argv[1]) if len(sys.argv) > 1 else 30
+    result = run_benchmark(num_queries)
+    sys.exit(0 if result.get('failed', 0) == 0 else 1)

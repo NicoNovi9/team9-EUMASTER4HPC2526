@@ -114,17 +114,8 @@ if [ ! -f "client_service.sif" ]; then
     apptainer build client_service.sif client/client_service.def
 fi
 
-# Create data directory and copy ollama IP
-mkdir -p data
-cp output/ollama_ip.txt data/ 2>/dev/null || echo "Warning: ollama_ip.txt not found"
-
 # Run the client service container
 echo "Starting client service container on $NODE_IP:5000"
-apptainer exec --bind data:/app/data client_service.sif python /app/clientService.py &
-CLIENT_PID=$!
-
-echo "✓ Client service started with PID $CLIENT_PID"
-echo "  Access at: http://$NODE_IP:5000"
 echo "$NODE_IP" > output/client_ip_${{JOB_ID}}.txt
 
 #============================================
@@ -147,8 +138,9 @@ echo "  - node_targets_client_${{JOB_ID}}.json"
 echo "========================================="
 echo ""
 
-# Keep both services running
-wait $CLIENT_PID $NODE_EXPORTER_PID
+# Run Flask in foreground (will keep job alive)
+# Use absolute path for bind mount
+apptainer exec --bind $PWD/output:/app/output:ro client_service.sif python /app/clientService.py
 """
     
     # Debug logging

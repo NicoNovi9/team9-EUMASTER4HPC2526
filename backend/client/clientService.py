@@ -21,10 +21,27 @@ class OllamaClientService:
     def _get_ollama_ip(self):
         """Get Ollama server IP from file"""
         try:
-            with open("/app/data/ollama_ip.txt", "r") as f:
-                return f.read().strip()
-        except FileNotFoundError:
-            # Fallback: try environment variable or localhost
+            # Look for ollama_ip_*.txt files
+            import glob
+            print(f"DEBUG: Looking for files in /app/output/")
+            all_files = glob.glob('/app/output/*')
+            print(f"DEBUG: Found {len(all_files)} files: {all_files[:5]}")
+            
+            ollama_files = sorted(glob.glob('/app/output/ollama_ip_*.txt'), key=os.path.getmtime, reverse=True)
+            print(f"DEBUG: Found {len(ollama_files)} ollama_ip files")
+            
+            if ollama_files:
+                print(f"DEBUG: Using {ollama_files[0]}")
+                with open(ollama_files[0], 'r') as f:
+                    ip = f.read().strip()
+                    print(f"DEBUG: Loaded IP: {ip}")
+                    return ip
+            
+            # Fallback to environment variable
+            print("DEBUG: No ollama_ip file found, using fallback")
+            return os.getenv('OLLAMA_HOST', 'localhost')
+        except Exception as e:
+            print(f"Error loading Ollama IP: {e}")
             return os.getenv('OLLAMA_HOST', 'localhost')
     
     def query_ollama(self, prompt, model=None):
@@ -81,8 +98,7 @@ def query():
         response = client_service.query_ollama(prompt, model)
         
         if 'response' in response:
-            print(f"Response received: {len(response['response'])} chars")
-            print(f"Preview: {response['response'][:100]}...")
+            print(f"Response: {len(response['response'])} chars")
         
         return jsonify(response)
         
@@ -154,5 +170,5 @@ if __name__ == '__main__':
     print("Starting Ollama Client Service...")
     print(f"Ollama server: {client_service.ollama_host}:{client_service.ollama_port}")
     
-    # Run Flask app
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Run Flask app (production mode, no debug!)
+    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
