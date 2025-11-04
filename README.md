@@ -51,7 +51,7 @@ The system is configuration‑driven (JSON/YAML): it orchestrates services, clie
   - Both are created automatically by SLURM for each job
 
 
-
+### Video demo: https://drive.google.com/file/d/1JifwIkfvEleJW9Fr6qJieK9_1cMHIzpF/view?usp=drive_link
 
 ### Testing
 - Use `python3 client/testClientService.py` to verify the full stack after deployment.
