@@ -27,9 +27,8 @@ The system is configuration‑driven (JSON/YAML): it orchestrates services, clie
 
 ### Services (Containerized Software)
 - Benchmarked systems or libraries run inside Apptainer containers.
-- Examples: Ollama (LLM serving), Qdrant (for KNN retrieval benchmarks with FAISS).
+- Examples: Ollama (LLM serving), Qdrant (for KNN retrieval benchmarks with FAISS, optional).
 
-### Monitoring (optional)
 ### Monitoring 
 
 - **Monitoring Stack**: A `monitoring_stack` service runs Prometheus and Grafana together on a dedicated compute node via SLURM job submission
