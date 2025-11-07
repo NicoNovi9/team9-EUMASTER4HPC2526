@@ -54,7 +54,45 @@ echo "Client service starting on $NODE_NAME ($NODE_IP) - Job $JOB_ID"
 echo "$NODE_IP" > output/client_ip_${{JOB_ID}}.txt
 echo "Saved client IP: $NODE_IP"
 
-# Build the container if it doesn't exist
+# ========================================
+# REGISTER IN PROMETHEUS
+# ========================================
+echo "Registering client node in Prometheus..."
+
+cat > output/prometheus_assets/node_targets_client_${{JOB_ID}}.json <<EOF
+[
+  {{
+    "targets": ["${{NODE_IP}}:9100"],
+    "labels": {{
+      "job": "node_exporter",
+      "node": "${{NODE_NAME}}",
+      "node_type": "client",
+      "slurm_job_id": "${{JOB_ID}}"
+    }}
+  }}
+]
+EOF
+
+echo "✓ Registered in Prometheus: output/prometheus_assets/node_targets_client_${{JOB_ID}}.json"
+
+# ========================================
+# START NODE EXPORTER
+# ========================================
+echo "Starting Node Exporter for Prometheus..."
+
+if [ ! -f "output/containers/node_exporter.sif" ]; then
+    echo "Pulling node_exporter image..."
+    apptainer pull output/containers/node_exporter.sif docker://prom/node-exporter:latest
+fi
+
+apptainer exec output/containers/node_exporter.sif /bin/node_exporter &
+NODE_EXPORTER_PID=$!
+
+echo "✓ Node Exporter started (PID: $NODE_EXPORTER_PID) on port 9100"
+
+# ========================================
+# BUILD AND START CLIENT SERVICE
+# ========================================
 if [ ! -f "output/containers/client_service.sif" ]; then
     echo "Building client service container..."
     apptainer build output/containers/client_service.sif client/client_service.def
@@ -67,18 +105,17 @@ echo "========================================="
 echo "Node:          ${{NODE_NAME}}"
 echo "IP:            ${{NODE_IP}}"
 echo "Client API:    http://${{NODE_IP}}:5000"
+echo "Node Exporter: http://${{NODE_IP}}:9100"
 echo "CPUs allocated: {cpus_needed}"
 echo "========================================="
 echo ""
 
-# Export CPU info for Python to use
 export OMP_NUM_THREADS={cpus_needed}
 export SLURM_CPUS_ON_NODE={cpus_needed}
 
-# Run Flask in foreground with output directory mounted
-# Apptainer inherits environment variables automatically
 apptainer exec --bind {backend_dir}/output:/app/output:ro output/containers/client_service.sif python /app/clientService.py
 """
+
     
     # Debug logging
     print("Setting up client service...")

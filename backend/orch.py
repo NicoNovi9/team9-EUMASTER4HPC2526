@@ -107,7 +107,7 @@ if __name__ == "__main__":
         print(f"Error: Invalid JSON: {e}")
         sys.exit(1)
     
-    # prepare_monitoring()
+    prepare_monitoring()
 
     # Deploy Ollama server
     print("Deploying Ollama server...")
@@ -208,5 +208,5 @@ if __name__ == "__main__":
     print("="*60)
     
     # Cancel all jobs for current user
-    subprocess.run(['scancel', '--me'], check=False)
-    print("All SLURM jobs cancelled.")
+    #subprocess.run(['scancel', '--me'], check=False)
+    #print("All SLURM jobs cancelled.")
