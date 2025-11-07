@@ -43,7 +43,7 @@ echo "Client service starting on $NODE_NAME ($NODE_IP) - Job $JOB_ID"
 
 # Save IP immediately
 echo "$NODE_IP" > output/client_ip_${{JOB_ID}}.txt
-echo "✓ Saved client IP: $NODE_IP"
+echo "Saved client IP: $NODE_IP"
 
 # Build the container if it doesn't exist
 if [ ! -f "output/containers/client_service.sif" ]; then
