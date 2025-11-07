@@ -12,4 +12,11 @@
 
 module load Python
 pip install -r requirements.txt
+
+# Clean previous output directory
+if [ -d "output" ]; then
+    echo "Removing existing output directory..."
+    rm -rf output
+fi
+
 python -u orch.py recipe_ex/inference_recipe.json 

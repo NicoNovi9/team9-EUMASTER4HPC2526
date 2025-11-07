@@ -113,14 +113,47 @@ if __name__ == "__main__":
     print("Deploying Ollama server...")
     ollamaService.setup_ollama(data)
 
-    # Wait and deploy client
-    print("Waiting 50 seconds...")
-    time.sleep(50)
+    # Wait for Ollama to be ready with model loaded
+    print("\nWaiting for Ollama server to be ready with model loaded...")
+    max_wait = 300  # 5 minutes
+    elapsed = 0
+    
+    while elapsed < max_wait:
+        ollama_files = glob.glob('output/ollama_ip_*.txt')
+        
+        if ollama_files:
+            with open(sorted(ollama_files, key=os.path.getmtime)[-1], 'r') as f:
+                ollama_ip = f.read().strip()
+            
+            try:
+                # Check if Ollama has models loaded
+                response = requests.get(f"http://{ollama_ip}:11434/api/tags", timeout=5)
+                
+                if response.status_code == 200:
+                    models = response.json().get('models', [])
+                    if models:
+                        print(f"  Ollama ready at {ollama_ip}:11434")
+                        print(f"  Loaded models: {[m.get('name') for m in models]}")
+                        break
+                    else:
+                        print(f"  Waiting for models to load... ({elapsed}s)")
+                else:
+                    print(f"  Ollama responding but not ready... ({elapsed}s)")
+            except:
+                print(f"  Waiting for Ollama... ({elapsed}s)")
+        else:
+            print(f"  Waiting for ollama_ip file... ({elapsed}s)")
+        
+        time.sleep(10)
+        elapsed += 10
+    
+    if elapsed >= max_wait:
+        print("ERROR: Ollama server timeout - no models loaded")
+        sys.exit(1)
 
     print("Deploying client service...")
     clientServiceHandler.setup_client_service(data)
 
-    # Wait for client service to be ready
     # Wait for client service to be ready
     print("\nWaiting for client service to be ready...")
     max_wait = 300  # 5 minutes
@@ -134,22 +167,20 @@ if __name__ == "__main__":
                 client_ip = f.read().strip()
             
             try:
-                # Check both /health and /benchmark endpoints
+                # Check /health endpoint
                 health_resp = requests.get(f"http://{client_ip}:5000/health", timeout=3)
-                benchmark_resp = requests.post(
-                    f"http://{client_ip}:5000/benchmark",
-                    json={"num_queries": 1, "model": "test", "parallel": False},
-                    timeout=5
-                )
                 
-                # If both respond (even with errors), Flask is fully loaded
-                if health_resp.status_code and benchmark_resp.status_code:
+                if health_resp.status_code == 200:
                     print(f"✓ Client ready at {client_ip}:5000")
+                    # Give extra time for Flask to fully initialize
+                    print("Waiting 10 more seconds for Flask to stabilize...")
+                    time.sleep(10)
                     break
-            except:
-                pass
+            except Exception as e:
+                print(f"  Waiting... ({elapsed}s) - {e}")
+        else:
+            print(f"  Waiting for client_ip file... ({elapsed}s)")
         
-        print(f"  Waiting... ({elapsed}s)")
         time.sleep(5)
         elapsed += 5
     
@@ -165,9 +196,6 @@ if __name__ == "__main__":
     num_queries = data.get('job', {}).get('service', {}).get('n_requests_per_client', 30)
     
     print(f"Model: {model_name}, Queries: {num_queries}")
-    
-    print("Waiting 20 seconds...")
-    time.sleep(20)
 
     # Run parallel benchmark
     testClientService.run_benchmark(num_queries, model_name)

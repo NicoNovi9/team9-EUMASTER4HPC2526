@@ -3,7 +3,7 @@
   {
     "name": "ollama_inference_job",
     "infrastructure": {
-      "partition": "gpu",
+      "partition": "cpu",
       "account": "p200981",
       "nodes": 1,
       "mem_gb": 64,
