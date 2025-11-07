@@ -3,7 +3,7 @@
   {
     "name": "ollama_inference_job",
     "infrastructure": {
-      "partition": "gpu",
+      "partition": "cpu",
       "account": "p200981",
       "nodes": 1,
       "mem_gb": 64,
@@ -14,7 +14,7 @@
       "model": "llama2",
       "precision": "fp16",
       "n_clients": 10,
-      "n_requests_per_client": 2
+      "n_requests_per_client": 1
     }
   }
 }
