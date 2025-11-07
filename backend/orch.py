@@ -193,9 +193,20 @@ if __name__ == "__main__":
     
     # Extract parameters from recipe
     model_name = data.get('job', {}).get('service', {}).get('model', 'llama2')
-    num_queries = data.get('job', {}).get('service', {}).get('n_requests_per_client', 30)
+    n_clients = data.get('job', {}).get('service', {}).get('n_clients', 1)
+    n_requests_per_client = data.get('job', {}).get('service', {}).get('n_requests_per_client', 5)
     
-    print(f"Model: {model_name}, Queries: {num_queries}")
+    print(f"Model: {model_name}")
+    print(f"Clients: {n_clients}")
+    print(f"Requests per client: {n_requests_per_client}")
 
-    # Run parallel benchmark
-    testClientService.run_benchmark(num_queries, model_name)
+    # Run benchmark with correct parameters
+    testClientService.run_benchmark(n_clients, n_requests_per_client, model_name)
+    
+    print("\n" + "="*60)
+    print("Benchmark complete. Cleaning up SLURM jobs...")
+    print("="*60)
+    
+    # Cancel all jobs for current user
+    subprocess.run(['scancel', '--me'], check=False)
+    print("All SLURM jobs cancelled.")

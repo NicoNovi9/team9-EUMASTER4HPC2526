@@ -18,8 +18,10 @@ def setup_ollama(data):
     
     # Parametri del servizio
     model = service.get('model', 'llama2')
+    n_clients = service.get('n_clients', 1)  # For OLLAMA_NUM_PARALLEL
     
     job_script = f"""#!/bin/bash -l
+#SBATCH --time=01:00:00
 #SBATCH --job-name=ollama_service
 #SBATCH --partition={partition}
 #SBATCH --qos=default
@@ -145,12 +147,15 @@ fi
 # Start Ollama with persistent model storage
 echo "Starting Ollama service..."
 apptainer exec --nv \\
+  --env OLLAMA_NUM_PARALLEL={n_clients} \\
+  --env OLLAMA_MAX_LOADED_MODELS={n_clients} \\
   --bind output/ollama_models:/root/.ollama \\
   output/containers/ollama_latest.sif \\
   ollama serve &
 
 OLLAMA_PID=$!
 echo "Ollama started with PID: $OLLAMA_PID"
+echo "Parallel requests enabled: {n_clients}"
 
 # Wait for Ollama to be ready
 sleep 15
@@ -193,6 +198,7 @@ echo "  Node Exporter: http://${{NODE_IP}}:9100"
 echo "  DCGM Exporter: http://${{NODE_IP}}:9400"
 echo ""
 echo "Model:         {model}"
+echo "Parallel reqs: {n_clients}"
 echo "Model Storage: $(pwd)/output/ollama_models"
 echo ""
 echo "Target files:"

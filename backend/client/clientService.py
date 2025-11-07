@@ -5,12 +5,12 @@ import os
 import time
 import requests
 from concurrent.futures import ThreadPoolExecutor
-import threading
 
 app = Flask(__name__)
 
-# Thread pool for parallel requests
-executor = ThreadPoolExecutor(max_workers=10)
+# Thread pool for parallel client simulation
+executor = ThreadPoolExecutor(max_workers=20)
+# No longer need ThreadPoolExecutor - each client does sequential requests
 
 class OllamaClientService:
     def __init__(self):
@@ -108,59 +108,62 @@ def query():
 
 @app.route('/benchmark', methods=['POST'])
 def benchmark():
-    """Run parallel benchmark queries"""
+    """Run benchmark with n_clients doing n_requests each (in parallel)"""
     try:
         data = request.get_json()
-        num_queries = data.get('num_queries', 10)
+        n_clients = data.get('n_clients', 1)
+        n_requests_per_client = data.get('n_requests_per_client', 5)
         prompt = data.get('prompt', 'Hello, how are you?')
         model = data.get('model', client_service.default_model)
-        parallel = data.get('parallel', True)
         
-        print(f"Starting benchmark: {num_queries} queries, parallel={parallel}")
+        print(f"Starting benchmark: {n_clients} clients × {n_requests_per_client} requests")
         
         start_time = time.time()
         
-        if parallel:
-            # Submit all queries to thread pool
-            futures = []
-            for i in range(num_queries):
-                future = executor.submit(client_service.query_ollama, prompt, model)
-                futures.append(future)
-            
-            # Collect results
+        def client_worker(client_id):
+            """Each client does n_requests_per_client sequential requests"""
+            import threading
+            print(f"[Client {client_id}] Starting on thread {threading.current_thread().name}")
             results = []
-            for i, future in enumerate(futures):
-                try:
-                    result = future.result(timeout=120)
-                    results.append(result)
-                    print(f"Query {i+1}/{num_queries} completed")
-                except Exception as e:
-                    results.append({"error": str(e)})
-                    print(f"Query {i+1}/{num_queries} failed: {e}")
-        else:
-            # Sequential execution
-            results = []
-            for i in range(num_queries):
+            for i in range(n_requests_per_client):
                 result = client_service.query_ollama(prompt, model)
+                result['client_id'] = client_id
+                result['request_id'] = i
                 results.append(result)
-                print(f"Query {i+1}/{num_queries} completed")
+                print(f"[Client {client_id}] Request {i+1}/{n_requests_per_client} completed in {result.get('request_time', 0):.2f}s")
+            print(f"[Client {client_id}] Finished all {n_requests_per_client} requests")
+            return results
+        
+        # Execute n_clients in parallel (each doing sequential requests)
+        all_results = []
+        futures = []
+        for client_id in range(n_clients):
+            future = executor.submit(client_worker, client_id)
+            futures.append(future)
+        
+        # Collect all results
+        for future in futures:
+            client_results = future.result(timeout=600)
+            all_results.extend(client_results)
         
         total_time = time.time() - start_time
         
         # Calculate stats
-        successful = sum(1 for r in results if 'error' not in r)
-        failed = len(results) - successful
-        avg_request_time = sum(r.get('request_time', 0) for r in results if 'error' not in r) / successful if successful > 0 else 0
+        total_queries = n_clients * n_requests_per_client
+        successful = sum(1 for r in all_results if 'error' not in r)
+        failed = total_queries - successful
+        avg_request_time = sum(r.get('request_time', 0) for r in all_results if 'error' not in r) / successful if successful > 0 else 0
         
         return jsonify({
-            "total_queries": num_queries,
+            "n_clients": n_clients,
+            "n_requests_per_client": n_requests_per_client,
+            "total_queries": total_queries,
             "successful": successful,
             "failed": failed,
             "total_time": total_time,
             "avg_request_time": avg_request_time,
-            "queries_per_second": num_queries / total_time if total_time > 0 else 0,
-            "parallel": parallel,
-            "results": results
+            "queries_per_second": total_queries / total_time if total_time > 0 else 0,
+            "results": all_results
         })
         
     except Exception as e:
@@ -169,6 +172,14 @@ def benchmark():
 if __name__ == '__main__':
     print("Starting Ollama Client Service...")
     print(f"Ollama server: {client_service.ollama_host}:{client_service.ollama_port}")
+    
+    # Check available CPUs
+    import multiprocessing
+    cpus_available = multiprocessing.cpu_count()
+    slurm_cpus = os.getenv('SLURM_CPUS_ON_NODE', 'not set')
+    print(f"CPUs available: {cpus_available}")
+    print(f"SLURM_CPUS_ON_NODE: {slurm_cpus}")
+    print(f"ThreadPoolExecutor max_workers: {executor._max_workers}")
     
     # Run Flask app (production mode, no debug!)
     app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)

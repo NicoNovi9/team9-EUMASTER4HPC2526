@@ -49,9 +49,19 @@ tokens_per_second{{client_id="{client_id}",model="{model}"}} {tps}
         print(f"  Pushgateway push failed: {e}")
 
 
-def run_benchmark(num_queries=30, model="llama2"):
-    """Run parallel benchmark via client service"""
-    print(f"\nPARALLEL BENCHMARK: {num_queries} queries\n")
+def run_benchmark(n_clients=1, n_requests_per_client=5, model="llama2"):
+    """Run parallel benchmark via client service
+    
+    Args:
+        n_clients: Number of parallel clients to simulate
+        n_requests_per_client: Number of requests each client makes
+        model: Model name to use
+    """
+    total_queries = n_clients * n_requests_per_client
+    print(f"\nPARALLEL BENCHMARK")
+    print(f"  Clients: {n_clients}")
+    print(f"  Requests per client: {n_requests_per_client}")
+    print(f"  Total queries: {total_queries}\n")
     
     try:
         # Load client service IP
@@ -63,9 +73,16 @@ def run_benchmark(num_queries=30, model="llama2"):
             client_ip = f.read().strip()
         
         url = f"http://{client_ip}:5000/benchmark"
-        payload = {"num_queries": num_queries, "model": model, "parallel": True}
+        payload = {
+            "n_clients": n_clients,
+            "n_requests_per_client": n_requests_per_client,
+            "model": model
+        }
         
-        print(f"Sending request to {url}...")
+        print(f"Sending benchmark request to {url}...")
+        print(f"Server will run {n_clients} clients in parallel\n")
+        
+        # Single request to server - server handles the parallelism
         response = requests.post(url, json=payload, timeout=600)
         
         if response.status_code != 200:
@@ -73,14 +90,14 @@ def run_benchmark(num_queries=30, model="llama2"):
         
         result = response.json()
         
-        # Calculate tokens and TPS for each result, push to Pushgateway
+        # Process results and push to Pushgateway
         pushgateway_ip = _load_pushgateway_ip()
         total_tokens = 0
         total_tps = 0
-        successful_with_response = 0
+        all_request_times = []
         
         if 'results' in result:
-            for i, query_result in enumerate(result['results']):
+            for query_result in result['results']:
                 if 'error' not in query_result and 'response' in query_result:
                     num_tokens = _calculate_tokens(query_result)
                     elapsed = query_result.get('request_time', 0)
@@ -88,35 +105,42 @@ def run_benchmark(num_queries=30, model="llama2"):
                     
                     total_tokens += num_tokens
                     total_tps += tps
-                    successful_with_response += 1
+                    all_request_times.append(elapsed)
                     
                     # Push to Pushgateway
-                    client_id = f"benchmark_query_{i}"
-                    _push_to_pushgateway(tps, model, client_id, pushgateway_ip)
+                    client_id = query_result.get('client_id', 0)
+                    request_id = query_result.get('request_id', 0)
+                    _push_to_pushgateway(tps, model, f"client_{client_id}_req_{request_id}", pushgateway_ip)
         
-        avg_tps = total_tps / successful_with_response if successful_with_response > 0 else 0
+        avg_tps = total_tps / len(all_request_times) if all_request_times else 0
         
         print("\n" + "="*60)
         print("BENCHMARK RESULTS")
         print("="*60)
-        print(f"Total queries:    {result['total_queries']}")
-        print(f"Successful:       {result['successful']}")
-        print(f"Failed:           {result['failed']}")
-        print(f"Total time:       {result['total_time']:.2f}s")
-        print(f"Avg request time: {result['avg_request_time']:.2f}s")
+        print(f"Clients:          {result.get('n_clients', n_clients)}")
+        print(f"Requests/client:  {result.get('n_requests_per_client', n_requests_per_client)}")
+        print(f"Total queries:    {result.get('total_queries', total_queries)}")
+        print(f"Successful:       {result.get('successful', 0)}")
+        print(f"Failed:           {result.get('failed', 0)}")
+        print(f"Total time:       {result.get('total_time', 0):.2f}s")
+        print(f"Avg request time: {result.get('avg_request_time', 0):.2f}s")
         print(f"Total tokens:     {total_tokens}")
         print(f"Avg TPS:          {avg_tps:.2f}")
-        print(f"Queries/sec:      {result['queries_per_second']:.2f}")
+        print(f"Throughput:       {result.get('queries_per_second', 0):.2f} queries/sec")
         print("="*60 + "\n")
         
         return result
         
     except Exception as e:
         print(f"ERROR: {e}")
-        return {"error": str(e), "total": num_queries, "successful": 0, "failed": num_queries}
+        total_queries = n_clients * n_requests_per_client
+        return {"error": str(e), "total": total_queries, "successful": 0, "failed": total_queries}
 
 
 if __name__ == "__main__":
-    num_queries = int(sys.argv[1]) if len(sys.argv) > 1 else 30
-    result = run_benchmark(num_queries)
+    n_clients = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+    n_requests = int(sys.argv[2]) if len(sys.argv) > 2 else 5
+    model = sys.argv[3] if len(sys.argv) > 3 else "llama2"
+    
+    result = run_benchmark(n_clients, n_requests, model)
     sys.exit(0 if result.get('failed', 0) == 0 else 1)

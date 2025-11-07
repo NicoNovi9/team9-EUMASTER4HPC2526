@@ -8,6 +8,7 @@ def setup_client_service(data):
     # Extract parameters from recipe
     job = data.get('job', {})
     infrastructure = job.get('infrastructure', {})
+    service = job.get('service', {})
     
     # Get absolute path of backend directory for bind mount
     backend_dir = os.path.abspath(os.path.dirname(__file__) + '/..')
@@ -19,6 +20,13 @@ def setup_client_service(data):
     nodes = 1  # Single node for now
     mem_gb = infrastructure.get('client_mem_gb', 8)  # Less memory for client
     
+    # Get n_clients from recipe (for ThreadPool sizing)
+    n_clients = service.get('n_clients', 1)
+    n_requests_per_client = service.get('n_requests_per_client', 5)
+    
+    # We need 1 CPU per client (each client makes requests sequentially)
+    cpus_needed = n_clients
+    
     job_script = f"""#!/bin/bash -l
 #SBATCH --job-name=ollama_client
 #SBATCH --partition={partition}
@@ -27,6 +35,7 @@ def setup_client_service(data):
 #SBATCH --account={account}
 #SBATCH --nodes={nodes}
 #SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task={cpus_needed}
 #SBATCH --mem={mem_gb}G
 #SBATCH --output=output/logs/client_service_%j.out
 #SBATCH --error=output/logs/client_service_%j.err
@@ -58,16 +67,23 @@ echo "========================================="
 echo "Node:          ${{NODE_NAME}}"
 echo "IP:            ${{NODE_IP}}"
 echo "Client API:    http://${{NODE_IP}}:5000"
+echo "CPUs allocated: {cpus_needed}"
 echo "========================================="
 echo ""
 
+# Export CPU info for Python to use
+export OMP_NUM_THREADS={cpus_needed}
+export SLURM_CPUS_ON_NODE={cpus_needed}
+
 # Run Flask in foreground with output directory mounted
+# Apptainer inherits environment variables automatically
 apptainer exec --bind {backend_dir}/output:/app/output:ro output/containers/client_service.sif python /app/clientService.py
 """
     
     # Debug logging
     print("Setting up client service...")
     print(f"Using infrastructure: partition={partition}, account={account}, mem={mem_gb}GB")
+    print(f"Resource allocation: 1 task, {cpus_needed} CPUs ({n_clients} clients, each doing {n_requests_per_client} sequential requests)")
     
     # Ensure output directories exist
     os.makedirs("output/scripts", exist_ok=True)
