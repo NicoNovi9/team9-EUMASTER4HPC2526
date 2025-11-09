@@ -19,4 +19,4 @@ if [ -d "output" ]; then
     rm -rf output
 fi
 
-python -u orch.py recipe_ex/inference_recipe.json 
+python -u orch.py recipe_ex/inference_recipe.json "$@"

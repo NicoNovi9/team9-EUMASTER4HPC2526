@@ -7,14 +7,14 @@
       "account": "p200981",
       "nodes": 1,
       "mem_gb": 64,
-      "time": "00:15:00"
+      "time": "01:00:00"
     },
     "service": {
       "type": "inference",
       "model": "llama2",
       "precision": "fp16",
-      "n_clients": 10,
-      "n_requests_per_client": 1
+      "n_clients": 100,
+      "n_requests_per_client": 10
     }
   }
 }

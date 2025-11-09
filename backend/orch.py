@@ -90,11 +90,24 @@ def prepare_monitoring():
         time.sleep(10)
 
 if __name__ == "__main__":
+    # Accept: orch.py <json_file_path> [--no-monitoring]
     if len(sys.argv) < 2:
-        print("Usage: python3 orch.py <json_file_path>")
+        print("Usage: python3 orch.py <json_file_path> [--no-monitoring]")
         sys.exit(1)
-    
-    json_file_path = sys.argv[1]
+
+    # Simple flag parsing: look for --no-monitoring anywhere
+    no_monitoring = '--no-monitoring' in sys.argv[1:]
+
+    # First non-flag argument is the JSON file
+    json_file_path = None
+    for a in sys.argv[1:]:
+        if not a.startswith('-'):
+            json_file_path = a
+            break
+
+    if json_file_path is None:
+        print("Error: recipe json file path not provided")
+        sys.exit(1)
     
     try:
         with open(json_file_path, 'r') as f:
@@ -107,7 +120,10 @@ if __name__ == "__main__":
         print(f"Error: Invalid JSON: {e}")
         sys.exit(1)
     
-    prepare_monitoring()
+    if not no_monitoring:
+        prepare_monitoring()
+    else:
+        print("Skipping monitoring setup (--no-monitoring)")
 
     # Deploy Ollama server
     print("Deploying Ollama server...")
@@ -115,7 +131,7 @@ if __name__ == "__main__":
 
     # Wait for Ollama to be ready with model loaded
     print("\nWaiting for Ollama server to be ready with model loaded...")
-    max_wait = 300  # 5 minutes
+    max_wait = 3600  
     elapsed = 0
     
     while elapsed < max_wait:
@@ -156,7 +172,7 @@ if __name__ == "__main__":
 
     # Wait for client service to be ready
     print("\nWaiting for client service to be ready...")
-    max_wait = 300  # 5 minutes
+    max_wait = 3600 
     elapsed = 0
     
     while elapsed < max_wait:
@@ -203,10 +219,9 @@ if __name__ == "__main__":
     # Run benchmark with correct parameters
     testClientService.run_benchmark(n_clients, n_requests_per_client, model_name)
     
-    print("\n" + "="*60)
-    print("Benchmark complete. Cleaning up SLURM jobs...")
-    print("="*60)
-    
     # Cancel all jobs for current user
+    # print("\n" + "="*60)
+    # print("Benchmark complete. Cleaning up SLURM jobs...")
+    # print("="*60)
     #subprocess.run(['scancel', '--me'], check=False)
     #print("All SLURM jobs cancelled.")
