@@ -1,0 +1,90 @@
+📄 job.sh_3836156.out
+Size: 3.76 KB | Modified: 12/10/2025, 8:49:54 AM
+← Back
+Requirement already satisfied: idna in /home/users/u103038/.local/lib/python3.12/site-packages (3.11)
+Requirement already satisfied: charset_normalizer in /home/users/u103038/.local/lib/python3.12/site-packages (3.4.3)
+All packages imported successfully.
+Loaded recipe: /home/users/u103038/recipe.json
+Submitted batch job 3836157
+Waiting for Pushgateway to enter RUNNING state...
+  Current state: PENDING, waiting...
+Pushgateway is RUNNING!
+Submitted batch job 3836158
+Waiting for Prometheus to enter RUNNING state...
+  Current state: PENDING, waiting...
+  Current state: CONFIGURING, waiting...
+✓ Prometheus is RUNNING!
+Waiting 10 seconds for Prometheus to fully initialize...
+Deploying Ollama server...
+received JSON: {'job': {'name': 'ollama_inference_job', 'infrastructure': {'partition': 'gpu', 'account': 'p200981', 'nodes': 1, 'mem_gb': 128, 'time': '00:35:00'}, 'service': {'type': 'inference', 'model': 'llama2', 'precision': 'fp16', 'n_clients': 20, 'n_requests_per_client': 1, 'prompt': 'what is love'}}}
+Using job: name=ollama_inference_job
+Using infrastructure: partition=gpu, account=p200981, nodes=1, mem=128GB
+Using service: model=llama2
+SLURM submission output: Submitted batch job 3836159
+
+
+Waiting for Ollama server to be ready with model loaded...
+  Waiting for Ollama... (0s)
+  Waiting for Ollama... (10s)
+  Ollama ready at 10.3.40.146:11434
+  Loaded models: ['vicuna:latest', 'gemma3:latest', 'llama2:latest', 'mistral:latest']
+Deploying client service...
+Setting up client service...
+Using infrastructure: partition=cpu, account=p200981, mem=8GB
+Resource allocation: 1 task, 20 CPUs (20 clients, each doing 1 sequential requests)
+Client service job submitted: Submitted batch job 3836160
+
+Waiting for client service to be ready...
+  Waiting... (0s) - HTTPConnectionPool(host='10.3.23.15', port=5000): Max retries exceeded with url: /health (Caused by NewConnectionError(': Failed to establish a new connection: [Errno 111] Connection refused'))
+  Waiting... (5s) - HTTPConnectionPool(host='10.3.23.15', port=5000): Max retries exceeded with url: /health (Caused by NewConnectionError(': Failed to establish a new connection: [Errno 111] Connection refused'))
+✓ Client ready at 10.3.23.14:5000
+Waiting 10 more seconds for Flask to stabilize...
+
+Deployment complete. Starting test queries...
+Model: llama2
+Clients: 20
+Requests per client: 1
+
+PARALLEL BENCHMARK
+  Clients: 20
+  Requests per client: 1
+  Total queries: 20
+
+Sending benchmark request to http://10.3.23.14:5000/benchmark...
+Server will run 20 clients in parallel
+
+  ✓ Pushed TPS=6.16 to Pushgateway
+  ✓ Pushed TPS=6.01 to Pushgateway
+  ✓ Pushed TPS=7.11 to Pushgateway
+  ✓ Pushed TPS=8.79 to Pushgateway
+  ✓ Pushed TPS=6.79 to Pushgateway
+  ✓ Pushed TPS=7.19 to Pushgateway
+  ✓ Pushed TPS=7.64 to Pushgateway
+  ✓ Pushed TPS=6.17 to Pushgateway
+  ✓ Pushed TPS=7.28 to Pushgateway
+  ✓ Pushed TPS=6.48 to Pushgateway
+  ✓ Pushed TPS=7.11 to Pushgateway
+  ✓ Pushed TPS=3.62 to Pushgateway
+  ✓ Pushed TPS=6.24 to Pushgateway
+  ✓ Pushed TPS=5.84 to Pushgateway
+  ✓ Pushed TPS=6.87 to Pushgateway
+  ✓ Pushed TPS=6.40 to Pushgateway
+  ✓ Pushed TPS=6.56 to Pushgateway
+  ✓ Pushed TPS=6.09 to Pushgateway
+  ✓ Pushed TPS=6.72 to Pushgateway
+  ✓ Pushed TPS=6.56 to Pushgateway
+
+============================================================
+BENCHMARK RESULTS
+============================================================
+Clients:          20
+Requests/client:  1
+Total queries:    20
+Successful:       20
+Failed:           0
+Total time:       10.58s
+Avg request time: 10.18s
+Total tokens:     1346
+Avg TPS:          6.58
+Throughput:       1.89 queries/sec
+============================================================

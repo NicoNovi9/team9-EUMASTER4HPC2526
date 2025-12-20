@@ -1,0 +1,68 @@
+📄 job.sh_3836168.out
+Size: 2.49 KB | Modified: 12/10/2025, 9:04:14 AM
+← Back
+Requirement already satisfied: idna in /home/users/u103038/.local/lib/python3.12/site-packages (3.11)
+Requirement already satisfied: charset_normalizer in /home/users/u103038/.local/lib/python3.12/site-packages (3.4.3)
+All packages imported successfully.
+Loaded recipe: /home/users/u103038/recipe.json
+Pushgateway job already running
+Prometheus job already running
+Deploying Ollama server...
+received JSON: {'job': {'name': 'ollama_inference_job', 'infrastructure': {'partition': 'gpu', 'account': 'p200981', 'nodes': 1, 'mem_gb': 128, 'time': '00:35:00'}, 'service': {'type': 'inference', 'model': 'llama2', 'precision': 'fp16', 'n_clients': 10, 'n_requests_per_client': 1, 'prompt': 'what is love'}}}
+Using job: name=ollama_inference_job
+Using infrastructure: partition=gpu, account=p200981, nodes=1, mem=128GB
+Using service: model=llama2
+SLURM submission output: Submitted batch job 3836169
+
+
+Waiting for Ollama server to be ready with model loaded...
+  Ollama ready at 10.3.40.146:11434
+  Loaded models: ['vicuna:latest', 'gemma3:latest', 'llama2:latest', 'mistral:latest']
+Deploying client service...
+Setting up client service...
+Using infrastructure: partition=cpu, account=p200981, mem=8GB
+Resource allocation: 1 task, 10 CPUs (10 clients, each doing 1 sequential requests)
+Client service job submitted: Submitted batch job 3836170
+
+Waiting for client service to be ready...
+✓ Client ready at 10.3.23.14:5000
+Waiting 10 more seconds for Flask to stabilize...
+
+Deployment complete. Starting test queries...
+Model: llama2
+Clients: 10
+Requests per client: 1
+
+PARALLEL BENCHMARK
+  Clients: 10
+  Requests per client: 1
+  Total queries: 10
+
+Sending benchmark request to http://10.3.23.40:5000/benchmark...
+Server will run 10 clients in parallel
+
+  ✓ Pushed TPS=9.48 to Pushgateway
+  ✓ Pushed TPS=6.82 to Pushgateway
+  ✓ Pushed TPS=9.26 to Pushgateway
+  ✓ Pushed TPS=8.94 to Pushgateway
+  ✓ Pushed TPS=8.83 to Pushgateway
+  ✓ Pushed TPS=11.74 to Pushgateway
+  ✓ Pushed TPS=8.88 to Pushgateway
+  ✓ Pushed TPS=8.40 to Pushgateway
+  ✓ Pushed TPS=9.05 to Pushgateway
+  ✓ Pushed TPS=9.60 to Pushgateway
+
+============================================================
+BENCHMARK RESULTS
+============================================================
+Clients:          10
+Requests/client:  1
+Total queries:    10
+Successful:       10
+Failed:           0
+Total time:       7.84s
+Avg request time: 7.60s
+Total tokens:     693
+Avg TPS:          9.10
+Throughput:       1.28 queries/sec
+============================================================

@@ -4,13 +4,19 @@
    contain the root `toctree` directive.
 
 Welcome to Team9EUM4HPC's documentation!
-========================================
+=========================================
+
+This documentation covers our HPC benchmark project, including architecture, raw data tables, code documentation, and analysis findings.
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
 
-
+   
+   architecture
+   code
+   tables
+   findings
 
 Indices and tables
 ==================
