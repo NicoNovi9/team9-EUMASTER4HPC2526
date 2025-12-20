@@ -1,16 +1,32 @@
 Tables
 ======
 
-Raw collected benchmark data.
+Raw TPS measurements used in the analysis. Each CSV contains one column
+named ``tps`` with per‑request tokens‑per‑second values.
 
-Data Tables
------------
+Mistral – 64 GB
+----------------
 
-.. csv-table::
-   :header: "Metric","Value","Unit"
-   :widths: 20, 10, 10
+Source file: ``metrics_collection/tps_csvs/mistral64.csv``
 
-   "Throughput",1000,"ops/sec"
-   "Latency",50,"ms"
+.. literalinclude:: metrics_collection/tps_csvs/mistral64.csv
+   :language: text
+   :linenos:
 
+Mistral – 128 GB
+----------------
 
+Source file: ``metrics_collection/tps_csvs/mistral128.csv``
+
+.. literalinclude:: metrics_collection/tps_csvs/mistral128.csv
+   :language: text
+   :linenos:
+
+Llama2 – 64 GB (sequential benchmark)
+-------------------------------------
+
+Source file: ``metrics_collection/tps_csvs/llama2_64_sequential.csv``
+
+.. literalinclude:: metrics_collection/tps_csvs/llama2_64_sequential.csv
+   :language: text
+   :linenos:

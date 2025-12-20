@@ -685,7 +685,7 @@ function generateLogsContent(logsList) {
 function generateJobSH(username){
   const jobScript = `#!/bin/bash -l
 
-#SBATCH --time=00:05:00
+#SBATCH --time=00:45:00
 #SBATCH --qos=default
 #SBATCH --partition=cpu
 #SBATCH --account=p200981

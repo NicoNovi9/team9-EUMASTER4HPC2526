@@ -61,7 +61,7 @@ class OllamaClientService:
             response = requests.post(
                 url,
                 json=payload,
-                timeout=60,
+                timeout=120,
                 headers={'Content-Type': 'application/json'}
             )
             elapsed = time.time() - start_time

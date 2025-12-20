@@ -53,6 +53,8 @@ The system is configuration‑driven (JSON/YAML): it orchestrates services, clie
 
 ### Video demo: https://drive.google.com/file/d/1JifwIkfvEleJW9Fr6qJieK9_1cMHIzpF/view?usp=drive_link
 
+### Benchmark findings: https://team9-eumaster4hpc2526.readthedocs.io/en/latest/index.html
+
 ### Testing
 - Use `python3 client/testClientService.py` to verify the full stack after deployment.
 - You can also manually test endpoints with `curl` using the client service IP.

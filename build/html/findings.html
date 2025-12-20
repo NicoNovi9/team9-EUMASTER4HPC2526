@@ -48,7 +48,11 @@
 <li class="toctree-l1"><a class="reference internal" href="tables.html">Tables</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Findings</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#anova-results">ANOVA Results</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#key-visualizations">Key Visualizations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#boxplot-mistral-64-gb-vs-128-gb">Boxplot: Mistral 64 GB vs 128 GB</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#model-stability-under-load">Model Stability Under Load</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#saturation-behaviour-for-mistral-64-gb">Saturation Behaviour for Mistral (64 GB)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#saturation-line-plots">Saturation Line Plots</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#implications-for-deployment">Implications for Deployment</a></li>
 </ul>
 </li>
 </ul>
@@ -79,36 +83,48 @@
              
   <section id="findings">
 <h1>Findings<a class="headerlink" href="#findings" title="Permalink to this heading"></a></h1>
-<p>Analysis results and visualizations.</p>
+<p>Analysis results and visualizations based on the Ollama benchmarks on the GPU
+partition (A100, 64–128 GB RAM).</p>
 <section id="anova-results">
 <h2>ANOVA Results<a class="headerlink" href="#anova-results" title="Permalink to this heading"></a></h2>
-<p>Statistical analysis of benchmark runs:</p>
+<p>Impact of RAM allocation (64 GB vs 128 GB) on Mistral tokens‑per‑second (TPS)
+under high concurrency (100 parallel clients):</p>
+<ul class="simple">
+<li><p>Null hypothesis: <em>there is no difference in mean TPS between 64 GB and
+128 GB for Mistral</em>.</p></li>
+<li><p>One‑way ANOVA on the per‑request TPS distributions yields a high p‑value
+(≈ 0.78), so the null hypothesis cannot be rejected at α = 0.05.</p></li>
+<li><p>Interpretation: within this setup, <strong>increasing RAM from 64 GB to 128 GB does
+not produce a statistically significant change in Mistral tokens‑per‑second</strong>,
+which suggests that the bottleneck is elsewhere (GPU compute / VRAM /
+scheduling rather than system RAM).</p></li>
+</ul>
 <table class="docutils align-default">
 <colgroup>
-<col style="width: 20.0%" />
-<col style="width: 20.0%" />
-<col style="width: 20.0%" />
-<col style="width: 20.0%" />
-<col style="width: 20.0%" />
+<col style="width: 29.4%" />
+<col style="width: 17.6%" />
+<col style="width: 17.6%" />
+<col style="width: 17.6%" />
+<col style="width: 17.6%" />
 </colgroup>
 <thead>
 <tr class="row-odd"><th class="head"><p>Group</p></th>
-<th class="head"><p>Mean</p></th>
-<th class="head"><p>Std</p></th>
+<th class="head"><p>Mean TPS</p></th>
+<th class="head"><p>Std TPS</p></th>
 <th class="head"><p>F-stat</p></th>
 <th class="head"><p>p-value</p></th>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p>CPU</p></td>
-<td><p>1250.3</p></td>
-<td><p>45.2</p></td>
-<td><p>12.34</p></td>
-<td><p>0.001</p></td>
+<tr class="row-even"><td><p>Mistral 64 GB</p></td>
+<td><p>~4.0</p></td>
+<td><p>moderate</p></td>
+<td><p>0.28</p></td>
+<td><p>0.78</p></td>
 </tr>
-<tr class="row-odd"><td><p>GPU</p></td>
-<td><p>4500.7</p></td>
-<td><p>120.1</p></td>
+<tr class="row-odd"><td><p>Mistral 128 GB</p></td>
+<td><p>~4.0</p></td>
+<td><p>moderate</p></td>
 <td><ul class="simple">
 <li></li>
 </ul>
@@ -121,8 +137,124 @@
 </tbody>
 </table>
 </section>
-<section id="key-visualizations">
-<h2>Key Visualizations<a class="headerlink" href="#key-visualizations" title="Permalink to this heading"></a></h2>
+<section id="boxplot-mistral-64-gb-vs-128-gb">
+<h2>Boxplot: Mistral 64 GB vs 128 GB<a class="headerlink" href="#boxplot-mistral-64-gb-vs-128-gb" title="Permalink to this heading"></a></h2>
+<p>The following boxplot summarizes the TPS distributions for Mistral at 64 GB and
+128 GB of RAM under the 100‑client scenario. The means are almost overlapping
+and the spread is comparable, visually reinforcing the ANOVA result that
+additional RAM does not materially change tokens‑per‑second.</p>
+<figure class="align-center" id="id1">
+<a class="reference internal image-reference" href="_images/mistral_64gb_vs_128gb_boxplot.png"><img alt="Boxplot of Mistral TPS at 64 GB vs 128 GB" src="_images/mistral_64gb_vs_128gb_boxplot.png" style="width: 90%;" /></a>
+<figcaption>
+<p><span class="caption-text">Mistral TPS distributions for 64 GB and 128 GB RAM (100 parallel clients).</span><a class="headerlink" href="#id1" title="Permalink to this image"></a></p>
+</figcaption>
+</figure>
+</section>
+<section id="model-stability-under-load">
+<h2>Model Stability Under Load<a class="headerlink" href="#model-stability-under-load" title="Permalink to this heading"></a></h2>
+<p>With 100 parallel clients:</p>
+<ul class="simple">
+<li><p><strong>Mistral</strong> is the only model that consistently completes all requests
+without timeouts for the prompt <code class="docutils literal notranslate"><span class="pre">&quot;what</span> <span class="pre">is</span> <span class="pre">AI&quot;</span></code>.</p></li>
+<li><p><strong>Llama2</strong> and <strong>Vicuna</strong> exhibit severe degradation under the same
+conditions: per‑request latency grows beyond 60 seconds and many requests
+time out, indicating that these models saturate the available GPU resources
+much earlier than Mistral.</p></li>
+</ul>
+</section>
+<section id="saturation-behaviour-for-mistral-64-gb">
+<h2>Saturation Behaviour for Mistral (64 GB)<a class="headerlink" href="#saturation-behaviour-for-mistral-64-gb" title="Permalink to this heading"></a></h2>
+<p>For Mistral on the GPU partition with 64 GB RAM, three saturation experiments
+were run, varying the number of clients (1, 2, 4, 8, 16).</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 16.7%" />
+<col style="width: 27.8%" />
+<col style="width: 27.8%" />
+<col style="width: 27.8%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Clients</p></th>
+<th class="head"><p>Heavy sequential workload
+(100 requests/client, avg TPS)</p></th>
+<th class="head"><p>Light sequential workload
+(10 requests/client, avg TPS)</p></th>
+<th class="head"><p>Fixed total workload
+(clients × requests = 16, avg TPS)</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>129.85</p></td>
+<td><p>114.23</p></td>
+<td><p>124.11</p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p>70.31</p></td>
+<td><p>63.50</p></td>
+<td><p>73.65</p></td>
+</tr>
+<tr class="row-even"><td><p>4</p></td>
+<td><p>48.69</p></td>
+<td><p>57.85</p></td>
+<td><p>37.63</p></td>
+</tr>
+<tr class="row-odd"><td><p>8</p></td>
+<td><p>32.89</p></td>
+<td><p>33.85</p></td>
+<td><p>20.01</p></td>
+</tr>
+<tr class="row-even"><td><p>16</p></td>
+<td><p>17.57</p></td>
+<td><p>16.90</p></td>
+<td><p>8.15</p></td>
+</tr>
+</tbody>
+</table>
+<p>Key observations:</p>
+<ul class="simple">
+<li><p><strong>Tokens‑per‑second decreases monotonically with more clients</strong> in all three
+scenarios, showing that the system saturates quickly as concurrency
+increases.</p></li>
+<li><p>For low client counts (1–2), a <strong>heavy sequential workload</strong> yields the
+highest TPS; beyond 4 clients, the light workload curve stays above the
+heavy one, meaning long sequential runs per client are more costly under
+contention.</p></li>
+<li><p>In the <strong>fixed‑total‑workload</strong> scenario, distributing the same total work
+across many clients (for example 16×1) is significantly less efficient than
+running it with few clients (1×16 or 2×8), highlighting that “many shallow
+clients” is a poor strategy for maximizing tokens‑per‑second.</p></li>
+</ul>
+</section>
+<section id="saturation-line-plots">
+<h2>Saturation Line Plots<a class="headerlink" href="#saturation-line-plots" title="Permalink to this heading"></a></h2>
+<p>The saturation behaviour can be visualized with line plots that show how TPS
+evolves as the number of parallel clients increases for each workload type:</p>
+<ul class="simple">
+<li><p>Heavy sequential workload: 100 sequential requests per client.</p></li>
+<li><p>Light sequential workload: 10 sequential requests per client.</p></li>
+<li><p>Fixed total workload: clients × sequential requests = 16.</p></li>
+</ul>
+<figure class="align-center" id="id2">
+<a class="reference internal image-reference" href="_images/mistral_saturation_lines.png"><img alt="Line plots of Mistral TPS vs number of clients" src="_images/mistral_saturation_lines.png" style="width: 90%;" /></a>
+<figcaption>
+<p><span class="caption-text">Mistral TPS vs number of parallel clients for heavy, light and fixed‑total
+workloads (RAM = 64 GB, GPU partition).</span><a class="headerlink" href="#id2" title="Permalink to this image"></a></p>
+</figcaption>
+</figure>
+</section>
+<section id="implications-for-deployment">
+<h2>Implications for Deployment<a class="headerlink" href="#implications-for-deployment" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>Simply adding more RAM from 64 GB to 128 GB does not improve
+tokens‑per‑second for Mistral; <strong>GPU‑side limits (compute, VRAM, KV‑cache
+footprint) and Ollama’s scheduling are the dominant bottlenecks</strong> under high
+concurrency.</p></li>
+<li><p>For this hardware and prompt, the sweet spot for Mistral lies at low to
+moderate concurrency (around 2–4 clients) with multiple sequential requests
+per client; pushing to 8–16 parallel clients sharply reduces both
+tokens‑per‑second and effective capacity.</p></li>
+</ul>
 </section>
 </section>
 
