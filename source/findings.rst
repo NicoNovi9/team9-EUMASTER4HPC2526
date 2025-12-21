@@ -54,6 +54,25 @@ additional RAM does not materially change tokens‑per‑second.
 
    Mistral TPS distributions for 64 GB and 128 GB RAM (100 parallel clients).
 
+ANOVA: GPU vs CPU (Mistral)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Impact of compute device (GPU partition vs CPU run) on Mistral tokens‑per‑second (TPS)
+for the sequential workload:
+
+- Null hypothesis: *there is no difference in mean TPS between GPU and CPU runs*.
+- One‑way ANOVA on the per‑request TPS distributions yields an extremely small p‑value
+  (p = 1.83e‑157), so the null hypothesis is rejected at α = 0.05.
+- Interpretation: **GPU and CPU throughput are statistically different**, with the GPU run
+  achieving much higher TPS than the CPU run in this experiment.
+
+.. figure:: _static/anova_boxplot_gpu_vs_cpu.png
+   :alt: TPS boxplot comparing GPU vs CPU (ANOVA)
+   :align: center
+   :width: 90%
+
+   TPS distributions for GPU vs CPU runs; the plot title reports the ANOVA p-value.
+
 
 Model Stability Under Load
 --------------------------
@@ -142,8 +161,7 @@ Implications for Deployment
 ---------------------------
 
 - Simply adding more RAM from 64 GB to 128 GB does not improve
-  tokens‑per‑second for Mistral; **GPU‑side limits (compute, VRAM, KV‑cache
-  footprint) and Ollama’s scheduling are the dominant bottlenecks** under high
+  tokens‑per‑second for Mistral; **Ollama’s scheduling are is likely to be the dominant bottleneck despite powerful hardware** under high
   concurrency.
 - For this hardware and prompt, the sweet spot for Mistral lies at low to
   moderate concurrency (around 2–4 clients) with multiple sequential requests

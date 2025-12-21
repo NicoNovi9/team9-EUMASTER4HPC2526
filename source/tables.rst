@@ -22,6 +22,25 @@ Source file: ``metrics_collection/tps_csvs/mistral128.csv``
    :language: text
    :linenos:
 
+Mistral – Sequential (GPU, 64 GB)
+---------------------------------
+
+Source file: ``metrics_collection/tps_csvs/mistral_sequential_64gbGPU.csv``
+
+.. literalinclude:: metrics_collection/tps_csvs/mistral_sequential_64gbGPU.csv
+   :language: text
+   :linenos:
+
+Mistral – Sequential (CPU, 64 GB)
+---------------------------------
+
+Source file: ``metrics_collection/tps_csvs/mistral_sequential_64GB_CPU.csv``
+
+.. literalinclude:: metrics_collection/tps_csvs/mistral_sequential_64GB_CPU.csv
+   :language: text
+   :linenos:
+
+
 Llama2 – 64 GB (sequential benchmark)
 -------------------------------------
 
