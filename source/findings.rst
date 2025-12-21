@@ -63,7 +63,7 @@ for the sequential workload:
 - Null hypothesis: *there is no difference in mean TPS between GPU and CPU runs*.
 - One‑way ANOVA on the per‑request TPS distributions yields an extremely small p‑value
   (p = 1.83e‑157), so the null hypothesis is rejected at α = 0.05.
-- Interpretation: **GPU and CPU throughput are statistically different**, with the GPU run
+- Interpretation: **GPU and CPU Tokens-per-second are statistically different**, with the GPU run
   achieving much higher TPS than the CPU run in this experiment.
 
 .. figure:: _static/anova_boxplot_gpu_vs_cpu.png
