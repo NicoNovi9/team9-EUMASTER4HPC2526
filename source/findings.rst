@@ -1,5 +1,79 @@
 Findings
 ========
+Software and model inventory
+----------------------------
+
+This section records the exact serving stack and model artifacts used during benchmarking to support reproducibility.
+
+Ollama version
+~~~~~~~~~~~~~~
+
+- Ollama CLI/client version: ``0.12.6`` (as reported by ``ollama --version`` on the compute node).
+
+Installed models (Ollama tag inventory)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The list below is captured from ``curl http://127.0.0.1:11434/api/tags``.
+Ollama’s ``/api/tags`` endpoint reports each installed model’s tag plus artifact metadata (e.g., ``digest``, ``size``, and ``details`` fields such as parameter size and quantization). [web:314]
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 10 12 12 14 18
+
+   * - Model tag
+     - Family
+     - Params
+     - Quant
+     - Size (bytes)
+     - Digest (sha256)
+   * - ``mistral:latest``
+     - llama
+     - 7.2B
+     - Q4_K_M
+     - 4372824384
+     - ``6577803aa9a0...``
+   * - ``llama2:latest``
+     - llama
+     - 7B
+     - Q4_0
+     - 3826793677
+     - ``78e26419b446...``
+   * - ``vicuna:latest``
+     - llama
+     - 7B
+     - Q4_0
+     - 3825807726
+     - ``370739dc897b...``
+   * - ``gemma3:latest``
+     - gemma3
+     - 4.3B
+     - Q4_K_M
+     - 3338801804
+     - ``a2af6cc3eb7f...``
+
+Mistral model details (``ollama show mistral``)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To complement the tag inventory above, ``ollama show`` provides model-level configuration details used by the runtime:
+note: Ollama reports architecture: llama for Mistral, which refers to the GGUF/LLM architecture family used for execution compatibility, not that the model is a Meta LLaMA release.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 25
+
+   * - Field
+     - Value
+   * - Architecture
+     - ``llama``
+   * - Parameters
+     - ``7.2B``
+   * - Context length
+     - ``32768``
+   * - Embedding length
+     - ``4096``
+   * - Quantization
+     - ``Q4_K_M``
+
 
 Analysis results and visualizations based on the Ollama benchmarks on the GPU
 partition (A100, 64–128 GB RAM).
