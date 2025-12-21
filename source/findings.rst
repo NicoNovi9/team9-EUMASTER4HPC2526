@@ -58,7 +58,7 @@ ANOVA: GPU vs CPU (Mistral)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Impact of compute device (GPU partition vs CPU run) on Mistral tokens‑per‑second (TPS)
-for the sequential workload:
+for the sequential workload, with 100 observations each:
 
 - Null hypothesis: *there is no difference in mean TPS between GPU and CPU runs*.
 - One‑way ANOVA on the per‑request TPS distributions yields an extremely small p‑value

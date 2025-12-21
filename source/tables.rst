@@ -4,7 +4,7 @@ Tables
 Raw TPS measurements used in the analysis. Each CSV contains one column
 named ``tps`` with per‑request tokens‑per‑second values.
 
-Mistral – 64 GB
+Mistral – 64 GB, 100 Parallel clients
 ----------------
 
 Source file: ``metrics_collection/tps_csvs/mistral64.csv``
@@ -13,7 +13,7 @@ Source file: ``metrics_collection/tps_csvs/mistral64.csv``
    :language: text
    :linenos:
 
-Mistral – 128 GB
+Mistral – 128 GB, 100 Parallel clients
 ----------------
 
 Source file: ``metrics_collection/tps_csvs/mistral128.csv``
