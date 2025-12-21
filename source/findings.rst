@@ -14,7 +14,7 @@ Installed models (Ollama tag inventory)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The list below is captured from ``curl http://127.0.0.1:11434/api/tags``.
-Ollama’s ``/api/tags`` endpoint reports each installed model’s tag plus artifact metadata (e.g., ``digest``, ``size``, and ``details`` fields such as parameter size and quantization). [web:314]
+Ollama’s ``/api/tags`` endpoint reports each installed model’s tag plus artifact metadata (e.g., ``digest``, ``size``, and ``details`` fields such as parameter size and quantization). 
 
 .. list-table::
    :header-rows: 1
