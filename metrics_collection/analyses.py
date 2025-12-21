@@ -162,3 +162,33 @@ ax.grid(alpha=0.3)
 plt.tight_layout()
 plt.savefig("mistral_saturation_lines.png", dpi=300)
 plt.show()
+
+import pandas as pd
+from scipy.stats import f_oneway
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+GPU_CSV = "../team9-EUMASTER4HPC2526/source/metrics_collection/tps_csvs/mistral_sequential_64gbGPU.csv"
+CPU_CSV = "../team9-EUMASTER4HPC2526/source/metrics_collection/tps_csvs/mistral_sequential_64GB_CPU.csv"
+
+# Load data (single column named 'tps')
+gpu = pd.read_csv(GPU_CSV)["tps"].dropna()
+cpu = pd.read_csv(CPU_CSV)["tps"].dropna()
+
+# One-way ANOVA (2 groups)
+F, p = f_oneway(gpu, cpu)
+print(f"ANOVA: F={F:.6g}, p-value={p:.6g}")
+
+# Boxplot
+df = pd.DataFrame({
+    "tps": pd.concat([gpu, cpu], ignore_index=True),
+    "group": ["GPU"] * len(gpu) + ["CPU"] * len(cpu),
+})
+
+sns.set_theme(style="whitegrid")
+ax = sns.boxplot(data=df, x="group", y="tps")
+ax.set_title(f"TPS (GPU vs CPU) — ANOVA p={p:.3g}")
+
+plt.tight_layout()
+plt.savefig("anova_boxplot_gpu_vs_cpu.png", dpi=200)
+plt.show()
