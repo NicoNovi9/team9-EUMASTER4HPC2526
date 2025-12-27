@@ -647,6 +647,27 @@ The frontend is a Node.js/Express application that:
 4. Creates SSH tunnels for Grafana access
 5. Provides log browsing capabilities
 
+System Flow
+~~~~~~~~~~~
+
+.. code-block:: text
+
+   Browser (localhost:8000)
+       |
+       v
+   Express Server (conn_melux.js)
+       |
+       +---> SSH Connection (ssh2) ---> MeluXina Login Node (login.lxp.lu:8822)
+       |                                      |
+       |                                      +---> SFTP File Upload
+       |                                      +---> sbatch job.sh
+       |                                      +---> squeue/scancel
+       |
+       +---> SSH Tunnel ---> Compute Node:3000 (Grafana)
+       |
+       v
+   Local Browser ---> localhost:3000 ---> Grafana Dashboard
+
 Main Components
 ~~~~~~~~~~~~~~~
 
@@ -659,106 +680,487 @@ Main Express server and SSH orchestration module.
 
 .. code-block:: bash
 
+   # Start web application
    node conn_melux.js webapp
+   
+   # Check SLURM queue
+   node conn_melux.js squeue
+   
+   # Cancel a job
+   node conn_melux.js scancel <job_id>
 
-**Key Functions:**
+**Server Configuration:**
 
-- ``doBenchmarking(res, uploadSourceFiles)`` - Orchestrates the benchmark workflow:
+.. code-block:: javascript
 
-  - Establishes SSH connection to MeluXina
-  - Uploads backend source files via SFTP
-  - Submits SLURM job via ``sbatch``
-  - Waits for Prometheus readiness
-  - Retrieves Ollama service information
-  - Sets up Grafana SSH tunnel
+   const PORT = 8000;
+   // Kills any existing process on port before starting
+   require('child_process').execSync(`lsof -ti:${PORT} | xargs kill -9`);
 
-- ``submitSqueue()`` - Retrieves current SLURM queue status
-- ``submitCancel(jobId)`` - Cancels a running SLURM job
-- ``setupWebApp()`` - Configures Express routes and starts the server
+**Function:** ``doBenchmarking(res, uploadSourceFiles)``
+
+Orchestrates the complete benchmark workflow:
+
+.. code-block:: text
+
+   1. getSSHConnection()           --> Establish/reuse SSH connection
+   2. conn.sftp()                  --> Get SFTP session
+   3. generateJobSH(username)      --> Create SLURM job script
+   4. uploadFiles(sftp, files)     --> Upload backend files (if enabled)
+   5. execCommand('sbatch job.sh') --> Submit SLURM job
+   6. waitForPrometheus()          --> Poll until Prometheus ready
+   7. getOllamaServiceInfo()       --> Get Ollama job ID, IP, node
+   8. setupGrafanaTunnel()         --> Create SSH tunnel to Grafana
+
+**Files Uploaded (when uploadSourceFiles=true):**
+
+.. code-block:: javascript
+
+   [
+     { local: 'job.sh', remote: 'job.sh' },
+     { local: '../backend/orch.py', remote: 'orch.py' },
+     { local: '../backend/requirements.txt', remote: 'requirements.txt' },
+     { local: '../backend/client/clientService.py', remote: 'client/clientService.py' },
+     { local: '../backend/client/clientServiceHandler.py', remote: 'client/clientServiceHandler.py' },
+     { local: '../backend/client/testClientService.py', remote: 'client/testClientService.py' },
+     { local: '../backend/ollamaService.py', remote: 'ollamaService.py' },
+     { local: '../backend/qdrantService.py', remote: 'qdrantService.py' },
+     { local: 'recipe.json', remote: 'recipe.json' },
+     { local: '../backend/pushgateway_service.sh', remote: 'pushgateway_service.sh' },
+     { local: '../backend/client/client_service.def', remote: 'client/client_service.def' },
+     { local: '../backend/monitoring_stack.sh', remote: 'monitoring_stack.sh' }
+   ]
+
+**Function:** ``submitSqueue()``
+
+Retrieves current SLURM queue status via SSH.
+
+.. code-block:: javascript
+
+   const output = await helper.execCommand(conn, 'squeue');
+   return { success: true, output: output };
+
+**Function:** ``submitCancel(jobId)``
+
+Cancels a running SLURM job.
+
+.. code-block:: javascript
+
+   const output = await helper.execCommand(conn, `scancel ${jobId}`);
+
+**Function:** ``setupWebApp()``
+
+Configures Express routes and middleware:
+
+.. code-block:: javascript
+
+   app.use(express.json());
+   app.use(express.static(__dirname));
 
 **REST Endpoints:**
 
-- ``GET /`` - Serves the wizard HTML page
-- ``POST /startbenchmark`` - Submits a new benchmark job
-- ``GET /squeue`` - Returns current job queue
-- ``POST /scancel/:jobId`` - Cancels specified job
-- ``POST /setup-tunnel`` - Establishes Grafana tunnel
-- ``GET /logs`` - Browse log files
-- ``GET /logs/view`` - View log file content
-- ``GET /logs/download`` - Download log file
++-------------------------+--------+------------------------------------------------+
+| Endpoint                | Method | Description                                    |
++=========================+========+================================================+
+| ``/``                   | GET    | Serves wizard.html                             |
++-------------------------+--------+------------------------------------------------+
+| ``/startbenchmark``     | POST   | Submits benchmark job, returns job info        |
++-------------------------+--------+------------------------------------------------+
+| ``/squeue``             | GET    | Returns SLURM queue status                     |
++-------------------------+--------+------------------------------------------------+
+| ``/scancel/:jobId``     | POST   | Cancels specified SLURM job                    |
++-------------------------+--------+------------------------------------------------+
+| ``/setup-tunnel``       | POST   | Establishes Grafana SSH tunnel                 |
++-------------------------+--------+------------------------------------------------+
+| ``/logs``               | GET    | Browse log directories (query: path)           |
++-------------------------+--------+------------------------------------------------+
+| ``/logs/view``          | GET    | View log file content (query: file)            |
++-------------------------+--------+------------------------------------------------+
+| ``/logs/download``      | GET    | Download log file (query: file)                |
++-------------------------+--------+------------------------------------------------+
+
+**POST /startbenchmark Response:**
+
+.. code-block:: json
+
+   {
+     "success": true,
+     "message": "Benchmark job submitted successfully",
+     "path": "/path/to/recipe.json",
+     "fileName": "recipe.json",
+     "jobId": "12345",
+     "grafanaAddress": "http://localhost:3000",
+     "ipComputeNodeService": "10.x.x.x",
+     "ollamaComputeNode": "mel1234",
+     "ollamaJobID": "12345"
+   }
+
+**Graceful Shutdown:**
+
+.. code-block:: javascript
+
+   process.on('SIGINT', () => {
+     if (consts.prometheusServer) consts.prometheusServer.close();
+     if (consts.sshConnection) consts.sshConnection.end();
+     process.exit();
+   });
 
 helper.js
 ^^^^^^^^^
 
 Utility functions for SSH operations, file handling, and service discovery.
 
-**Key Functions:**
+**Initialization:**
 
-- ``getSSHConnection()`` - Returns or creates a persistent SSH connection
-- ``execCommand(conn, command)`` - Executes remote SSH command
-- ``uploadFiles(sftp, files)`` - Uploads multiple files via SFTP
-- ``waitForPrometheus(retries, delay)`` - Polls Prometheus health endpoint
-- ``getPrometheusNode(conn, username)`` - Finds monitoring stack compute node
-- ``getOllamaServiceInfo(conn, username)`` - Retrieves Ollama job details with retry logic
-- ``setupGrafanaTunnel()`` - Creates SSH tunnel for Grafana access (port 3000)
-- ``listLogsDirectory(conn, path)`` - Lists log files in remote directory
-- ``readLogFile(conn, path)`` - Reads log file content
-- ``generateJobSH(username)`` - Generates SLURM job submission script
-- ``renderTemplate(templatePath, vars)`` - Renders HTML templates with variables
+.. code-block:: javascript
+
+   function init() {
+     contextParams = getContextParams();
+     envParams = {
+       'privateKeyPath': contextParams.privateKey,
+       'username': contextParams.username,
+       'host': 'login.lxp.lu',
+       'port': 8822
+     };
+   }
+
+**Function:** ``getContextParams()``
+
+Returns user-specific SSH configuration based on local directory:
+
+.. code-block:: javascript
+
+   // Detects user from __dirname path
+   if (__dirname.includes('ivanalkhayat')) {
+     params.privateKey = '/Users/ivanalkhayat/.ssh/id_ed25519_mlux';
+     params.username = 'u103038';
+   }
+
+**Function:** ``getSSHConnection()``
+
+Returns existing SSH connection or creates a new one (singleton pattern):
+
+.. code-block:: javascript
+
+   // Connection reuse logic
+   if (consts.sshConnection && consts.sshConnection._sock.readable) {
+     return resolve(consts.sshConnection);
+   }
+   
+   // Connection state tracking
+   if (consts.isConnecting) {
+     // Wait for existing connection attempt
+   }
 
 **SSH Configuration:**
 
-- Host: ``login.lxp.lu``
-- Port: ``8822``
-- Authentication: SSH private key
+.. code-block:: javascript
+
+   const sshConfig = {
+     host: 'login.lxp.lu',
+     port: 8822,
+     username: envParams.username,
+     privateKey: fs.readFileSync(envParams.privateKeyPath)
+   };
+
+**Function:** ``execCommand(conn, command)``
+
+Executes SSH command and returns output:
+
+.. code-block:: javascript
+
+   conn.exec(command, (err, stream) => {
+     stream.on('data', (data) => { output += data.toString(); });
+     stream.stderr.on('data', (data) => { errorOutput += data.toString(); });
+     stream.on('close', () => { resolve(output); });
+   });
+
+**Function:** ``uploadFiles(sftp, files)``
+
+Uploads multiple files via SFTP to remote server:
+
+.. code-block:: javascript
+
+   const remoteDir = '/home/users/' + envParams.username + '/client';
+   for (const file of files) {
+     await sftp.fastPut(file.local, file.remote);
+   }
+
+**Function:** ``waitForPrometheus(retries, delay)``
+
+Polls Prometheus health endpoint until ready:
+
+.. code-block:: javascript
+
+   // Default: 30 retries, 2000ms delay
+   const output = await execCommand(conn, 
+     `curl -s http://${MONITORING_COMPUTE_NODE.ip}:9090/-/healthy`
+   );
+   if (output.includes('Prometheus')) return true;
+
+**Function:** ``getPrometheusNode(conn, username, maxAttempts, delayMs)``
+
+Finds monitoring_stack job and resolves compute node IP:
+
+.. code-block:: javascript
+
+   // Query squeue for monitoring_stack job
+   const squeueCmd = `squeue -u ${username} -n monitoring_stack -h -o '%N'`;
+   const node = await execCommand(conn, squeueCmd);
+   
+   // Resolve node hostname to IP
+   const hostCmd = `host ${node}`;
+   const hostResult = await execCommand(conn, hostCmd);
+   // Extract IP from "has address X.X.X.X"
+
+**Function:** ``getOllamaServiceInfo(conn, username, options)``
+
+Retrieves Ollama service details with exponential backoff retry:
+
+.. code-block:: javascript
+
+   const options = {
+     maxRetries: 10,
+     initialDelay: 20000,      // 20 seconds before first attempt
+     maxDelay: 60000,          // Cap at 60 seconds
+     backoffMultiplier: 1.5
+   };
+   
+   // Returns: { jobID, ip, node }
+
+**Function:** ``setupGrafanaTunnel()``
+
+Creates SSH port forwarding tunnel for Grafana:
+
+.. code-block:: javascript
+
+   // Create local TCP server
+   consts.prometheusServer = net.createServer((localSocket) => {
+     // Forward through SSH to compute node
+     conn.forwardOut(
+       '127.0.0.1', 0,                           // Source
+       consts.MONITORING_COMPUTE_NODE.ip, 3000,  // Destination
+       (err, remoteStream) => {
+         localSocket.pipe(remoteStream).pipe(localSocket);
+       }
+     );
+   });
+   
+   // Listen on localhost:3000
+   consts.prometheusServer.listen(3000, '127.0.0.1');
+
+**SFTP Helper Functions:**
+
+Concurrency-limited SFTP operations using ``p-limit``:
+
+.. code-block:: javascript
+
+   const limit = pLimit(3);  // Max 3 concurrent SFTP operations
+   let cachedSftp = null;    // Reuse SFTP session
+
+``getSftp(conn)``
+   Returns cached or new SFTP session.
+
+``withRetry(fn, retries)``
+   Wraps function with exponential backoff retry logic.
+
+``listLogsDirectory(conn, remotePath, relativePath)``
+   Lists files and directories with metadata (size, modified date).
+
+``readLogFile(conn, remotePath)``
+   Reads file content via SFTP stream.
+
+``getFileInfo(conn, remotePath)``
+   Returns file/directory metadata (size, modified, isDirectory).
+
+**HTML Template Functions:**
+
+``renderTemplate(templatePath, data)``
+   Replaces ``{{PLACEHOLDER}}`` with actual values in template files.
+
+``generateBreadcrumb(subPath)``
+   Generates navigation breadcrumb HTML for log browser.
+
+``generateLogsContent(logsList)``
+   Generates HTML for files and directories list.
+
+``generateDirectoryItem(dir)``
+   Generates HTML for a directory entry with folder icon.
+
+``generateFileItem(file)``
+   Generates HTML for a file entry with appropriate icon (.err, .out, other).
+
+**Function:** ``generateJobSH(username)``
+
+Generates SLURM job submission script:
+
+.. code-block:: bash
+
+   #!/bin/bash -l
+   #SBATCH --time=00:45:00
+   #SBATCH --qos=default
+   #SBATCH --partition=cpu
+   #SBATCH --account=p200981
+   #SBATCH --nodes=1
+   #SBATCH --ntasks=1
+   #SBATCH --output=/home/users/${username}/output/logs/%x_%j.out
+   #SBATCH --error=/home/users/${username}/output/logs/%x_%j.err
+   
+   mkdir -p /home/users/${username}/output/logs
+   module load Python
+   python /home/users/u103038/orch.py /home/users/${username}/recipe.json
 
 constants.js
 ^^^^^^^^^^^^
 
 Global state and configuration constants.
 
-**Variables:**
+.. code-block:: javascript
 
-- ``MONITORING_COMPUTE_NODE`` - Prometheus/Grafana node info (IP and hostname)
-- ``GRAFANA_LOCAL_PORT`` - Local port for Grafana tunnel (default: 3000)
-- ``sshConnection`` - Shared SSH connection instance
-- ``prometheusServer`` - SSH tunnel server reference
+   let MONITORING_COMPUTE_NODE = null;  // {ip, node}
+   const GRAFANA_LOCAL_PORT = 3000;
+   
+   let sshConnection = null;
+   let isConnecting = false;
+   let prometheusServer = null;
+   
+   module.exports = {
+     MONITORING_COMPUTE_NODE,
+     GRAFANA_LOCAL_PORT,
+     prometheusServer,
+     sshConnection,
+     isConnecting
+   };
 
 wizard.html
 ^^^^^^^^^^^
 
 Multi-step wizard interface for job configuration.
 
-**Steps:**
+**HTML Structure:**
 
-1. **Job Name** - Set job identifier
-2. **Infrastructure** - Configure SLURM parameters (partition, account, nodes, memory, time)
-3. **Service** - Define LLM settings (model, precision, clients, requests, prompt)
-4. **Review** - Preview JSON configuration and submit
+.. code-block:: html
 
-**Key Functions (JavaScript):**
+   <div class="wizard-step" data-step="1">Step 1: Job Name</div>
+   <div class="wizard-step" data-step="2">Step 2: Infrastructure</div>
+   <div class="wizard-step" data-step="3">Step 3: Service</div>
+   <div class="wizard-step" data-step="4">Step 4: Review</div>
 
-- ``generateConfigObject()`` - Builds JSON recipe from form inputs
-- ``callBenchmark(config)`` - Sends configuration to backend
-- ``useDefaults()`` - Applies default configuration values
-- ``changeStep(direction)`` - Navigates between wizard steps
+**CSS Classes:**
 
-**Default Configuration:**
+- ``.wizard-step`` - Hidden by default (``display: none``)
+- ``.wizard-step.active`` - Visible step (``display: block``)
+- ``.switch-container`` - Flexbox container for checkbox options
+
+**Form Fields:**
+
++-------------------------+------------------+------------------------+
+| Field                   | Type             | Default Value          |
++=========================+==================+========================+
+| ``jobName``             | text             | ollama_inference_job   |
++-------------------------+------------------+------------------------+
+| ``partition``           | select           | gpu                    |
++-------------------------+------------------+------------------------+
+| ``account``             | text             | p200981                |
++-------------------------+------------------+------------------------+
+| ``nodes``               | number           | 1                      |
++-------------------------+------------------+------------------------+
+| ``memory``              | number           | 64                     |
++-------------------------+------------------+------------------------+
+| ``time``                | text             | 00:05:00               |
++-------------------------+------------------+------------------------+
+| ``serviceType``         | select           | inference              |
++-------------------------+------------------+------------------------+
+| ``model``               | text             | llama2                 |
++-------------------------+------------------+------------------------+
+| ``precision``           | select           | fp16                   |
++-------------------------+------------------+------------------------+
+| ``nClients``            | number           | 2                      |
++-------------------------+------------------+------------------------+
+| ``nRequests``           | number           | 5                      |
++-------------------------+------------------+------------------------+
+| ``prompt``              | textarea         | (empty)                |
++-------------------------+------------------+------------------------+
+| ``uploadSourceFiles``   | checkbox         | checked                |
++-------------------------+------------------+------------------------+
+
+**Function:** ``generateConfigObject()``
+
+Builds JSON recipe from form inputs:
 
 .. code-block:: javascript
 
-   {
-     jobName: "ollama_inference_job",
-     partition: "gpu",
-     account: "p200981",
-     nodes: 1,
-     memory: 64,
-     time: "00:05:00",
-     model: "llama2",
-     precision: "fp16",
-     nClients: 2,
-     nRequests: 5
+   return {
+     job: {
+       name: document.getElementById('jobName').value,
+       infrastructure: {
+         partition: document.getElementById('partition').value,
+         account: document.getElementById('account').value,
+         nodes: parseInt(document.getElementById('nodes').value),
+         mem_gb: parseInt(document.getElementById('memory').value),
+         time: document.getElementById('time').value
+       },
+       service: {
+         type: document.getElementById('serviceType').value,
+         model: document.getElementById('model').value,
+         precision: document.getElementById('precision').value,
+         n_clients: parseInt(document.getElementById('nClients').value),
+         n_requests_per_client: parseInt(document.getElementById('nRequests').value),
+         prompt: document.getElementById('prompt').value
+       }
+     }
+   };
+
+**Function:** ``callBenchmark(config)``
+
+Sends configuration to backend and handles response:
+
+.. code-block:: javascript
+
+   const response = await fetch('/startbenchmark', {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify(config)
+   });
+   
+   const result = await response.json();
+   if (result.success) {
+     alert("Ollama_jobId: " + result.ollamaJobID + 
+           " on compute node: " + result.ollamaComputeNode);
+     window.location.replace(result.grafanaAddress);
    }
+
+**Function:** ``useDefaults()``
+
+Applies default configuration and immediately submits job:
+
+.. code-block:: javascript
+
+   Object.keys(defaults).forEach(key => {
+     const el = document.getElementById(key);
+     if (el.type === 'checkbox') el.checked = defaults[key];
+     else el.value = defaults[key];
+   });
+   await callBenchmark(generateConfigObject());
+
+**Function:** ``changeStep(direction)``
+
+Navigates between wizard steps:
+
+.. code-block:: javascript
+
+   // Hide current step
+   document.querySelector(`.wizard-step[data-step="${currentStep}"]`)
+     .classList.remove('active');
+   
+   // Show new step
+   currentStep += direction;
+   document.querySelector(`.wizard-step[data-step="${currentStep}"]`)
+     .classList.add('active');
+   
+   // Update navigation buttons
+   document.getElementById('prevBtn').style.display = 
+     currentStep === 1 ? 'none' : 'block';
 
 Templates
 ~~~~~~~~~
@@ -766,20 +1168,45 @@ Templates
 log-browser.html
 ^^^^^^^^^^^^^^^^
 
-HTML template for browsing log directories. Displays files and folders with:
+HTML template for browsing log directories.
 
-- File/folder icons
-- File size and modification date
-- View and download buttons for files
+**Template Variables:**
+
+- ``{{BREADCRUMB}}`` - Navigation path HTML
+- ``{{CONTENT}}`` - Directory/file listing HTML
+
+**Styling Features:**
+
+- Responsive grid layout with max-width 1200px
+- Cards with shadow and hover effects
+- Color-coded header (#2c3e50 dark blue)
+- Action buttons: blue (View), green (Download)
+
+**File Icons:**
+
+- Folder: folder emoji
+- .err files: red X emoji
+- .out files: green checkmark emoji
+- Other files: document emoji
 
 log-viewer.html
 ^^^^^^^^^^^^^^^
 
-HTML template for viewing log file contents with:
+HTML template for viewing log file contents.
 
-- Syntax highlighting for log entries
-- File metadata display
-- Back navigation and download options
+**Template Variables:**
+
+- ``{{FILE_NAME}}`` - Name of the log file
+- ``{{FILE_META}}`` - Size and modification date
+- ``{{BACK_LINK}}`` - URL to parent directory
+- ``{{FILE_CONTENT}}`` - Actual log content (escaped HTML)
+
+**Features:**
+
+- Monospace font for log content
+- Horizontal scrolling for long lines
+- Download button in header
+- Back navigation link
 
 Configuration Files
 ~~~~~~~~~~~~~~~~~~~
@@ -789,46 +1216,149 @@ package.json
 
 Node.js project configuration.
 
+.. code-block:: json
+
+   {
+     "name": "team9_ssh_meluxina",
+     "version": "1.0.0",
+     "description": "Project for SSH to Meluxina",
+     "main": "index.js",
+     "scripts": {
+       "start": "node conn_melux.js"
+     },
+     "dependencies": {
+       "http-proxy-middleware": "^3.0.5",
+       "ssh2": "^1.11.0"
+     }
+   }
+
 **Dependencies:**
 
-- ``ssh2`` - SSH2 client for Node.js
-- ``http-proxy-middleware`` - HTTP proxy middleware
-- ``express`` - Web framework (peer dependency)
-- ``p-limit`` - Concurrency limiter for SFTP operations
++---------------------------+----------+----------------------------------------+
+| Package                   | Version  | Purpose                                |
++===========================+==========+========================================+
+| ``ssh2``                  | ^1.11.0  | SSH2 client for Node.js                |
++---------------------------+----------+----------------------------------------+
+| ``http-proxy-middleware`` | ^3.0.5   | HTTP proxy middleware                  |
++---------------------------+----------+----------------------------------------+
+| ``express``               | (peer)   | Web framework                          |
++---------------------------+----------+----------------------------------------+
+| ``p-limit``               | (peer)   | Concurrency limiter for SFTP           |
++---------------------------+----------+----------------------------------------+
 
 **Scripts:**
 
 .. code-block:: bash
 
-   npm start  # Runs: node conn_melux.js
+   npm start        # Runs: node conn_melux.js
+   npm run webapp   # Alias for: node conn_melux.js webapp
 
 recipe.json
 ^^^^^^^^^^^
 
 Stores the last submitted job configuration (generated by the wizard).
 
-Workflow
-~~~~~~~~
+Updated on each ``/startbenchmark`` POST request before upload.
 
-1. User opens ``http://localhost:8000`` in browser
-2. Configures job parameters through wizard steps
-3. Clicks "Start Benchmark" on final step
-4. Frontend saves configuration to ``recipe.json``
-5. Establishes SSH connection to MeluXina
-6. Uploads backend files (if enabled)
-7. Submits ``job.sh`` via ``sbatch``
-8. Waits for Prometheus/Grafana to be ready
-9. Creates SSH tunnel for Grafana (local port 3000)
-10. Redirects user to Grafana dashboard
+Complete Workflow
+~~~~~~~~~~~~~~~~~
 
-SSH Tunnel Setup
-~~~~~~~~~~~~~~~~
+**Step-by-step execution:**
 
-The frontend creates an SSH tunnel for accessing Grafana:
+1. **User Access**
+   
+   - User opens ``http://localhost:8000`` in browser
+   - Express serves ``wizard.html``
 
-- **Local port**: 3000
-- **Remote**: Grafana on monitoring compute node (port 3000)
-- **Access**: ``http://localhost:3000`` after job submission
+2. **Job Configuration**
+   
+   - User navigates through 4 wizard steps
+   - Configures infrastructure and service parameters
+   - Optionally enables/disables source file upload
+
+3. **Job Submission**
+   
+   - User clicks "Start Benchmark" on Step 4
+   - Frontend saves config to local ``recipe.json``
+   - ``callBenchmark()`` POSTs to ``/startbenchmark``
+
+4. **Backend Processing**
+   
+   - ``doBenchmarking()`` establishes SSH connection
+   - Generates ``job.sh`` with user-specific paths
+   - Uploads files via SFTP (if enabled)
+   - Submits job: ``sbatch job.sh``
+
+5. **Service Discovery**
+   
+   - ``waitForPrometheus()`` polls until monitoring ready
+   - ``getOllamaServiceInfo()`` retrieves Ollama job details
+   - Returns IP addresses and job IDs to frontend
+
+6. **Tunnel Setup**
+   
+   - ``setupGrafanaTunnel()`` creates SSH port forward
+   - Maps ``localhost:3000`` to compute node Grafana
+
+7. **User Redirect**
+   
+   - Frontend receives success response
+   - Shows alert with job information
+   - Redirects browser to ``http://localhost:3000`` (Grafana)
+
+SSH Tunnel Architecture
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: text
+
+   User Browser                Frontend Server              MeluXina
+   (localhost:3000)           (Node.js)                    (Compute Node)
+        |                          |                            |
+        |---HTTP Request---------->|                            |
+        |                          |---SSH forwardOut---------->|
+        |                          |   to compute_node:3000     |
+        |                          |<--Grafana Response---------|
+        |<--HTTP Response----------|                            |
+
+**Tunnel Lifecycle:**
+
+1. Created after Prometheus becomes ready
+2. Persists until ``SIGINT`` (Ctrl+C) or process exit
+3. Handles multiple concurrent browser connections
+4. Automatic cleanup on SSH connection close
+
+Error Handling
+~~~~~~~~~~~~~~
+
+**SSH Connection Errors:**
+
+.. code-block:: javascript
+
+   consts.sshConnection.on('error', (err) => {
+     consts.isConnecting = false;
+     consts.sshConnection = null;
+     reject(err);
+   });
+
+**SFTP Retry Logic:**
+
+.. code-block:: javascript
+
+   async function withRetry(fn, retries = 3) {
+     for (let i = 0; i < retries; i++) {
+       try {
+         return await fn();
+       } catch (err) {
+         if (i === retries - 1) throw err;
+         await sleep(1000 * (i + 1));  // Exponential backoff
+       }
+     }
+   }
+
+**Service Discovery Timeout:**
+
+- Prometheus: 30 retries x 2s = 60s max
+- Ollama: 10 retries with exponential backoff (20s initial)
 
 Source Code Reference
 ---------------------
