@@ -261,6 +261,205 @@ Placeholder module for future Qdrant vector database integration.
 
 **Function:** ``setup_qdrant(data)`` - Generates SLURM script for Qdrant deployment (not yet fully implemented).
 
+Frontend Overview
+-----------------
+
+The frontend provides a web-based interface for configuring and submitting LLM inference jobs to the HPC cluster. It connects to MeluXina via SSH and manages job submission, monitoring tunnels, and log viewing.
+
+Architecture
+~~~~~~~~~~~~
+
+The frontend is a Node.js/Express application that:
+
+1. Serves a wizard-based HTML interface for job configuration
+2. Establishes SSH connections to the HPC cluster
+3. Uploads backend files and submits SLURM jobs
+4. Creates SSH tunnels for Grafana access
+5. Provides log browsing capabilities
+
+Main Components
+~~~~~~~~~~~~~~~
+
+conn_melux.js
+^^^^^^^^^^^^^
+
+Main Express server and SSH orchestration module.
+
+**Usage:**
+
+.. code-block:: bash
+
+   node conn_melux.js webapp
+
+**Key Functions:**
+
+- ``doBenchmarking(res, uploadSourceFiles)`` - Orchestrates the benchmark workflow:
+
+  - Establishes SSH connection to MeluXina
+  - Uploads backend source files via SFTP
+  - Submits SLURM job via ``sbatch``
+  - Waits for Prometheus readiness
+  - Retrieves Ollama service information
+  - Sets up Grafana SSH tunnel
+
+- ``submitSqueue()`` - Retrieves current SLURM queue status
+- ``submitCancel(jobId)`` - Cancels a running SLURM job
+- ``setupWebApp()`` - Configures Express routes and starts the server
+
+**REST Endpoints:**
+
+- ``GET /`` - Serves the wizard HTML page
+- ``POST /startbenchmark`` - Submits a new benchmark job
+- ``GET /squeue`` - Returns current job queue
+- ``POST /scancel/:jobId`` - Cancels specified job
+- ``POST /setup-tunnel`` - Establishes Grafana tunnel
+- ``GET /logs`` - Browse log files
+- ``GET /logs/view`` - View log file content
+- ``GET /logs/download`` - Download log file
+
+helper.js
+^^^^^^^^^
+
+Utility functions for SSH operations, file handling, and service discovery.
+
+**Key Functions:**
+
+- ``getSSHConnection()`` - Returns or creates a persistent SSH connection
+- ``execCommand(conn, command)`` - Executes remote SSH command
+- ``uploadFiles(sftp, files)`` - Uploads multiple files via SFTP
+- ``waitForPrometheus(retries, delay)`` - Polls Prometheus health endpoint
+- ``getPrometheusNode(conn, username)`` - Finds monitoring stack compute node
+- ``getOllamaServiceInfo(conn, username)`` - Retrieves Ollama job details with retry logic
+- ``setupGrafanaTunnel()`` - Creates SSH tunnel for Grafana access (port 3000)
+- ``listLogsDirectory(conn, path)`` - Lists log files in remote directory
+- ``readLogFile(conn, path)`` - Reads log file content
+- ``generateJobSH(username)`` - Generates SLURM job submission script
+- ``renderTemplate(templatePath, vars)`` - Renders HTML templates with variables
+
+**SSH Configuration:**
+
+- Host: ``login.lxp.lu``
+- Port: ``8822``
+- Authentication: SSH private key
+
+constants.js
+^^^^^^^^^^^^
+
+Global state and configuration constants.
+
+**Variables:**
+
+- ``MONITORING_COMPUTE_NODE`` - Prometheus/Grafana node info (IP and hostname)
+- ``GRAFANA_LOCAL_PORT`` - Local port for Grafana tunnel (default: 3000)
+- ``sshConnection`` - Shared SSH connection instance
+- ``prometheusServer`` - SSH tunnel server reference
+
+wizard.html
+^^^^^^^^^^^
+
+Multi-step wizard interface for job configuration.
+
+**Steps:**
+
+1. **Job Name** - Set job identifier
+2. **Infrastructure** - Configure SLURM parameters (partition, account, nodes, memory, time)
+3. **Service** - Define LLM settings (model, precision, clients, requests, prompt)
+4. **Review** - Preview JSON configuration and submit
+
+**Key Functions (JavaScript):**
+
+- ``generateConfigObject()`` - Builds JSON recipe from form inputs
+- ``callBenchmark(config)`` - Sends configuration to backend
+- ``useDefaults()`` - Applies default configuration values
+- ``changeStep(direction)`` - Navigates between wizard steps
+
+**Default Configuration:**
+
+.. code-block:: javascript
+
+   {
+     jobName: "ollama_inference_job",
+     partition: "gpu",
+     account: "p200981",
+     nodes: 1,
+     memory: 64,
+     time: "00:05:00",
+     model: "llama2",
+     precision: "fp16",
+     nClients: 2,
+     nRequests: 5
+   }
+
+Templates
+~~~~~~~~~
+
+log-browser.html
+^^^^^^^^^^^^^^^^
+
+HTML template for browsing log directories. Displays files and folders with:
+
+- File/folder icons
+- File size and modification date
+- View and download buttons for files
+
+log-viewer.html
+^^^^^^^^^^^^^^^
+
+HTML template for viewing log file contents with:
+
+- Syntax highlighting for log entries
+- File metadata display
+- Back navigation and download options
+
+Configuration Files
+~~~~~~~~~~~~~~~~~~~
+
+package.json
+^^^^^^^^^^^^
+
+Node.js project configuration.
+
+**Dependencies:**
+
+- ``ssh2`` - SSH2 client for Node.js
+- ``http-proxy-middleware`` - HTTP proxy middleware
+- ``express`` - Web framework (peer dependency)
+- ``p-limit`` - Concurrency limiter for SFTP operations
+
+**Scripts:**
+
+.. code-block:: bash
+
+   npm start  # Runs: node conn_melux.js
+
+recipe.json
+^^^^^^^^^^^
+
+Stores the last submitted job configuration (generated by the wizard).
+
+Workflow
+~~~~~~~~
+
+1. User opens ``http://localhost:8000`` in browser
+2. Configures job parameters through wizard steps
+3. Clicks "Start Benchmark" on final step
+4. Frontend saves configuration to ``recipe.json``
+5. Establishes SSH connection to MeluXina
+6. Uploads backend files (if enabled)
+7. Submits ``job.sh`` via ``sbatch``
+8. Waits for Prometheus/Grafana to be ready
+9. Creates SSH tunnel for Grafana (local port 3000)
+10. Redirects user to Grafana dashboard
+
+SSH Tunnel Setup
+~~~~~~~~~~~~~~~~
+
+The frontend creates an SSH tunnel for accessing Grafana:
+
+- **Local port**: 3000
+- **Remote**: Grafana on monitoring compute node (port 3000)
+- **Access**: ``http://localhost:3000`` after job submission
+
 Source Code Reference
 ---------------------
 
