@@ -18,6 +18,18 @@ The system follows a distributed architecture:
 3. **Client Service** - REST API for querying the LLM
 4. **Monitoring Stack** - Prometheus, Grafana, and exporters for metrics collection
 
+Deployment Flow
+~~~~~~~~~~~~~~~
+
+.. code-block:: text
+
+   User -> orch.py -> [1] Pushgateway (SLURM job)
+                   -> [2] Prometheus/Grafana (SLURM job)
+                   -> [3] Ollama Service (SLURM job on GPU node)
+                   -> [4] Client Service (SLURM job on CPU node)
+                   -> [5] Run Benchmark Tests
+                   -> [6] Collect Metrics via Pushgateway
+
 Main Components
 ~~~~~~~~~~~~~~~
 
@@ -32,20 +44,51 @@ The main entry point that coordinates the deployment of all services.
 
    python3 orch.py <recipe.json> [--no-monitoring]
 
+**Arguments:**
+
+- ``<recipe.json>`` - Path to job configuration file
+- ``--no-monitoring`` - Skip Prometheus/Grafana deployment (optional)
+
 **Key Functions:**
 
-- ``prepare_monitoring()`` - Deploys Pushgateway and Prometheus/Grafana stack
-- Waits for Ollama server to be ready with models loaded
-- Deploys client service and verifies health
+``prepare_monitoring()``
+   Deploys the monitoring infrastructure:
+   
+   1. Checks if Pushgateway job is already running via ``squeue``
+   2. Submits ``pushgateway_service.sh`` if needed
+   3. Waits for Pushgateway to enter RUNNING state (polls every 5s)
+   4. Checks if Prometheus job is already running
+   5. Submits ``monitoring_stack.sh`` if needed
+   6. Waits for Prometheus to enter RUNNING state
+   7. Adds 10s delay for full initialization
 
-**Workflow:**
+**Main Execution Flow:**
 
-1. Parse JSON recipe file
-2. Start monitoring services (optional)
-3. Deploy Ollama server via ``ollamaService.setup_ollama()``
-4. Wait for model loading (polls ``/api/tags`` endpoint)
-5. Deploy client service via ``clientServiceHandler.setup_client_service()``
-6. Verify client health endpoint
+1. Parse command line arguments and JSON recipe file
+2. Call ``prepare_monitoring()`` unless ``--no-monitoring`` flag is set
+3. Deploy Ollama server via ``ollamaService.setup_ollama(data)``
+4. Wait for Ollama readiness (max 3600s timeout):
+
+   - Poll for ``output/ollama_ip_*.txt`` file
+   - Query ``/api/tags`` endpoint to verify model is loaded
+   - Check every 10 seconds
+
+5. Deploy client service via ``clientServiceHandler.setup_client_service(data)``
+6. Wait for client service readiness (max 3600s timeout):
+
+   - Poll for ``output/client_ip_*.txt`` file
+   - Query ``/health`` endpoint
+   - Add 10s stabilization delay
+
+7. Install required Python packages (idna, charset_normalizer)
+8. Extract benchmark parameters from recipe
+9. Run benchmark via ``testClientService.run_benchmark()``
+
+**Error Handling:**
+
+- Exits with code 1 if recipe file not found or invalid JSON
+- Exits with code 1 if Ollama server timeout (no models loaded)
+- Exits with code 1 if client service timeout
 
 ollamaService.py
 ^^^^^^^^^^^^^^^^
@@ -54,24 +97,114 @@ Handles Ollama LLM server deployment on GPU nodes.
 
 **Function:** ``setup_ollama(data)``
 
-Generates and submits a SLURM batch script that:
+Generates and submits a SLURM batch script that deploys Ollama with GPU support.
 
-- Pulls and starts the Ollama container with GPU support (``--nv``)
-- Configures ``OLLAMA_NUM_PARALLEL`` for concurrent request handling
-- Starts Node Exporter for hardware metrics (port 9100)
-- Starts DCGM Exporter for GPU metrics (port 9400)
-- Registers targets with Prometheus via JSON files
-- Implements cleanup on job termination
+**Generated SLURM Script Structure:**
 
-**Configuration (from recipe):**
+.. code-block:: bash
 
-- ``partition`` - SLURM partition (default: gpu)
-- ``time`` - Job time limit
-- ``account`` - SLURM account
-- ``nodes`` - Number of nodes
-- ``mem_gb`` - Memory allocation
-- ``model`` - LLM model name (e.g., llama2, mistral)
-- ``n_clients`` - Number of parallel connections
+   #SBATCH --job-name=ollama_service
+   #SBATCH --partition=<from recipe>
+   #SBATCH --time=<from recipe>
+   #SBATCH --account=<from recipe>
+   #SBATCH --nodes=<from recipe>
+   #SBATCH --mem=<from recipe>G
+
+**Script Execution Steps:**
+
+1. **Environment Setup**
+   
+   - Load modules: ``env/release/2024.1``, ``Apptainer``
+   - Get node IP and hostname
+   - Write IP to ``output/ollama_ip_<jobid>.txt``
+   - Create persistent model directory
+
+2. **Cleanup Handler**
+   
+   - Registers trap for EXIT signal
+   - Removes Prometheus target files on job termination
+
+3. **Node Exporter Deployment**
+   
+   - Pulls ``prom/node-exporter:latest`` container if not present
+   - Starts with bind mounts for ``/proc`` and ``/sys``
+   - Listens on port 9100
+   - Registers target in ``node_targets_<jobid>.json``
+
+4. **DCGM Exporter Deployment**
+   
+   - Pulls ``nvcr.io/nvidia/k8s/dcgm-exporter`` container
+   - Starts with ``--nv`` flag for GPU access
+   - Listens on port 9400
+   - Registers target in ``gpu_targets_<jobid>.json``
+
+5. **Ollama Service Startup**
+   
+   - Pulls ``ollama/ollama:latest`` container if not present
+   - Environment variables:
+   
+     - ``OLLAMA_NUM_PARALLEL=<n_clients>`` - Concurrent request limit
+     - ``OLLAMA_MAX_LOADED_MODELS=<n_clients>`` - Model cache size
+   
+   - Bind mounts ``output/ollama_models`` for persistent storage
+   - Listens on port 11434
+
+6. **Model Download**
+   
+   - Checks if model exists via ``ollama list``
+   - Downloads model via ``ollama pull <model>`` if not present
+   - Uses persistent storage to cache models between runs
+
+**Configuration Parameters:**
+
++------------------------+------------------+------------------------+
+| Parameter              | Default          | Description            |
++========================+==================+========================+
+| ``partition``          | ``gpu``          | SLURM partition        |
++------------------------+------------------+------------------------+
+| ``time``               | ``00:05:00``     | Job time limit         |
++------------------------+------------------+------------------------+
+| ``account``            | ``p200981``      | SLURM account          |
++------------------------+------------------+------------------------+
+| ``nodes``              | ``1``            | Number of nodes        |
++------------------------+------------------+------------------------+
+| ``mem_gb``             | ``64``           | Memory in GB           |
++------------------------+------------------+------------------------+
+| ``model``              | ``llama2``       | LLM model name         |
++------------------------+------------------+------------------------+
+| ``n_clients``          | ``1``            | Parallel connections   |
++------------------------+------------------+------------------------+
+
+**Prometheus Target Registration:**
+
+Node Exporter target (``node_targets_<jobid>.json``):
+
+.. code-block:: json
+
+   [{
+     "targets": ["<node_ip>:9100"],
+     "labels": {
+       "job": "node_exporter",
+       "node": "<hostname>",
+       "node_type": "service",
+       "slurm_job_id": "<jobid>"
+     }
+   }]
+
+GPU target (``gpu_targets_<jobid>.json``):
+
+.. code-block:: json
+
+   [{
+     "targets": ["<node_ip>:9400"],
+     "labels": {
+       "job": "ollama_gpu",
+       "node": "<hostname>",
+       "gpu_type": "nvidia",
+       "model": "<model_name>",
+       "slurm_job_id": "<jobid>"
+     }
+   }]
 
 Client Service
 ~~~~~~~~~~~~~~
@@ -83,10 +216,35 @@ clientServiceHandler.py
 
 Deploys a containerized Flask-based REST API client on CPU nodes.
 
-- Builds container from ``client_service.def`` using Apptainer
-- Configures CPUs based on ``n_clients`` parameter
-- Registers with Prometheus for monitoring
-- Starts Node Exporter for metrics collection
+**Generated SLURM Script Structure:**
+
+.. code-block:: bash
+
+   #SBATCH --job-name=ollama_client
+   #SBATCH --partition=cpu
+   #SBATCH --cpus-per-task=<n_clients>
+   #SBATCH --mem=<client_mem_gb>G
+
+**Script Execution Steps:**
+
+1. Write node IP to ``output/client_ip_<jobid>.txt``
+2. Register client node in Prometheus via ``node_targets_client_<jobid>.json``
+3. Start Node Exporter for client metrics (port 9100)
+4. Build client container from ``client_service.def`` using Apptainer
+5. Set environment variables:
+
+   - ``OMP_NUM_THREADS=<n_clients>``
+   - ``SLURM_CPUS_ON_NODE=<n_clients>``
+
+6. Start Flask service with bind mount to ``output/`` directory
+
+**Resource Allocation:**
+
+The handler allocates 1 CPU per client to enable true parallel execution:
+
+.. code-block:: python
+
+   cpus_needed = n_clients  # 1 CPU per simulated client
 
 clientService.py
 ^^^^^^^^^^^^^^^^
@@ -95,37 +253,153 @@ Flask REST API providing endpoints to interact with Ollama.
 
 **Endpoints:**
 
-- ``GET /health`` - Health check, returns Ollama host info
-- ``POST /query`` - Single query to Ollama
+``GET /health``
+   Returns service health status and Ollama host information.
+   
+   Response:
+   
+   .. code-block:: json
+   
+      {"status": "healthy", "ollama_host": "10.x.x.x"}
 
-  .. code-block:: json
+``POST /query``
+   Sends a single query to Ollama and returns the response.
+   
+   Request:
+   
+   .. code-block:: json
+   
+      {"prompt": "Your question", "model": "llama2"}
+   
+   Response includes:
+   
+   - ``response`` - Generated text
+   - ``request_time`` - Elapsed time in seconds
+   - Additional Ollama metadata (tokens, timing)
 
-     {"prompt": "Your question", "model": "llama2"}
-
-- ``POST /benchmark`` - Run parallel benchmark tests
-
-  .. code-block:: json
-
-     {
-       "n_clients": 10,
-       "n_requests_per_client": 5,
-       "prompt": "Test prompt",
-       "model": "llama2"
-     }
+``POST /benchmark``
+   Runs a parallel benchmark with multiple simulated clients.
+   
+   Request:
+   
+   .. code-block:: json
+   
+      {
+        "n_clients": 10,
+        "n_requests_per_client": 5,
+        "prompt": "Test prompt",
+        "model": "llama2"
+      }
+   
+   **Execution Model:**
+   
+   Uses ``ThreadPoolExecutor`` with ``max_workers=20`` to run clients in parallel.
+   Each client executes its requests sequentially within its thread.
+   
+   Response:
+   
+   .. code-block:: json
+   
+      {
+        "n_clients": 10,
+        "n_requests_per_client": 5,
+        "total_queries": 50,
+        "successful": 48,
+        "failed": 2,
+        "total_time": 120.5,
+        "avg_request_time": 2.4,
+        "queries_per_second": 0.41,
+        "results": [...]
+      }
 
 **Class:** ``OllamaClientService``
 
-- ``_get_ollama_ip()`` - Reads Ollama server IP from output files
-- ``query_ollama(prompt, model)`` - Sends POST request to Ollama ``/api/generate``
+``__init__()``
+   Initializes the client and loads Ollama server IP.
+
+``_get_ollama_ip()``
+   Reads Ollama server IP from ``/app/output/ollama_ip_*.txt`` files.
+   Falls back to ``OLLAMA_HOST`` environment variable or ``localhost``.
+
+``query_ollama(prompt, model)``
+   Sends POST request to Ollama ``/api/generate`` endpoint.
+   
+   - Timeout: 120 seconds
+   - Stream: disabled
+   - Returns response data with ``request_time`` added
+
+testClientService.py
+^^^^^^^^^^^^^^^^^^^^
+
+Benchmark execution module that runs parallel tests and pushes metrics.
+
+**Function:** ``run_benchmark(n_clients, n_requests_per_client, model)``
+
+Orchestrates the benchmark by sending a single request to the client service
+which handles internal parallelization.
+
+**Execution Flow:**
+
+1. Load client service IP from ``output/client_ip_*.txt``
+2. Send POST request to ``/benchmark`` endpoint with parameters
+3. Process results and calculate metrics:
+
+   - Total tokens generated
+   - Average tokens per second (TPS)
+   - Request times
+
+4. Push TPS metrics to Pushgateway for each request
+5. Print summary report
+
+**Helper Functions:**
+
+``_load_pushgateway_ip()``
+   Reads Pushgateway IP from ``output/pushgateway_data/pushgateway_ip.txt``
+
+``_calculate_tokens(response_data)``
+   Extracts token count from response, checking:
+   
+   1. ``eval_count`` field
+   2. ``prompt_eval_count`` field
+   3. Word count of response text (fallback)
+
+``_push_to_pushgateway(tps, model, client_id, pushgateway_ip)``
+   Pushes ``tokens_per_second`` gauge metric to Pushgateway:
+   
+   .. code-block:: text
+   
+      tokens_per_second{client_id="<id>",model="<model>"} <value>
+
+**Command Line Usage:**
+
+.. code-block:: bash
+
+   python testClientService.py <n_clients> <n_requests> <model>
 
 client_service.def
 ^^^^^^^^^^^^^^^^^^
 
 Apptainer container definition for the client service.
 
+.. code-block:: text
+
+   Bootstrap: docker
+   From: python:3.9-slim
+   
+   %post
+       pip install flask requests
+       mkdir -p /app /app/data
+   
+   %files
+       client/clientService.py /app/clientService.py
+   
+   %runscript
+       exec python /app/clientService.py
+
 - Base image: ``python:3.9-slim``
 - Dependencies: Flask, requests
 - Exposes port 5000
+- Mounts ``output/`` directory for IP file access
 
 Monitoring Stack
 ~~~~~~~~~~~~~~~~
@@ -133,28 +407,110 @@ Monitoring Stack
 monitoring_stack.sh
 ^^^^^^^^^^^^^^^^^^^
 
-SLURM script that deploys the monitoring infrastructure:
+SLURM script that deploys the complete monitoring infrastructure.
 
-**Components:**
+**SLURM Configuration:**
 
-- **Prometheus** (port 9090) - Metrics collection and storage
-- **Grafana** (port 3000) - Visualization dashboards
+.. code-block:: bash
 
-**Features:**
+   #SBATCH --job-name=monitoring_stack
+   #SBATCH --cpus-per-task=2
+   #SBATCH --mem=8G
+   #SBATCH --time=02:00:00
+   #SBATCH --partition=cpu
 
-- File-based service discovery (``file_sd_configs``)
-- Auto-discovers targets from JSON files in ``prometheus_assets/``
-- Pre-configured Grafana datasource for Prometheus
+**Components Deployed:**
+
++-----------------+-------+----------------------------------------+
+| Service         | Port  | Description                            |
++=================+=======+========================================+
+| Prometheus      | 9090  | Metrics collection and querying        |
++-----------------+-------+----------------------------------------+
+| Grafana         | 3000  | Visualization dashboards               |
++-----------------+-------+----------------------------------------+
+
+**Prometheus Configuration:**
+
+Generated ``prometheus.yml`` with scrape configs:
+
+.. code-block:: yaml
+
+   global:
+     scrape_interval: 15s
+     evaluation_interval: 15s
+   
+   scrape_configs:
+     - job_name: 'prometheus'
+       static_configs:
+         - targets: ['localhost:9090']
+     
+     - job_name: 'node_exporter'
+       file_sd_configs:
+         - files: ['/prometheus/prometheus_assets/node_targets_*.json']
+           refresh_interval: 10s
+     
+     - job_name: 'dcgm_gpu'
+       file_sd_configs:
+         - files: ['/prometheus/prometheus_assets/gpu_targets_*.json']
+           refresh_interval: 3s
+     
+     - job_name: 'pushgateway'
+       static_configs:
+         - targets: ['<pushgateway_ip>:9091']
+
+**Grafana Configuration:**
+
+Auto-provisioned datasource (``prometheus.yml``):
+
+.. code-block:: yaml
+
+   datasources:
+     - name: Prometheus
+       type: prometheus
+       uid: prometheus
+       url: http://localhost:9090
+       isDefault: true
+
+**Pre-configured Dashboards:**
+
+1. **Node Exporter - Ollama Service** - System metrics for GPU nodes
+2. **Node Exporter - Client Nodes** - System metrics for client nodes
+3. **cAdvisor** - Container metrics
+4. **NVIDIA DCGM GPU** - GPU utilization, memory, temperature
+5. **Tokens Per Second** - Custom benchmark metrics dashboard
+
+**Tokens Per Second Dashboard:**
+
+Custom dashboard displaying benchmark metrics from Pushgateway:
+
+- Average TPS by model over time
+- Model comparison visualization
+- Color thresholds: red (<30), yellow (30-80), green (>80)
 
 pushgateway_service.sh
 ^^^^^^^^^^^^^^^^^^^^^^
 
-Deploys Prometheus Pushgateway for receiving pushed metrics (port 9091).
+Deploys Prometheus Pushgateway for receiving pushed metrics.
 
-prometheus_service.sh
-^^^^^^^^^^^^^^^^^^^^^
+**SLURM Configuration:**
 
-Alternative standalone Prometheus deployment script.
+.. code-block:: bash
+
+   #SBATCH --job-name=pushgateway_service
+   #SBATCH --cpus-per-task=2
+   #SBATCH --mem-per-cpu=2G
+   #SBATCH --partition=cpu
+
+**Execution:**
+
+1. Write node IP to ``output/pushgateway_data/pushgateway_ip.txt``
+2. Pull ``prom/pushgateway:latest`` container
+3. Start Pushgateway on port 9091 with debug logging
+
+**Metrics Endpoint:**
+
+- Push URL: ``http://<ip>:9091/metrics/job/<job>/instance/<instance>``
+- Query URL: ``http://<ip>:9091/metrics``
 
 SLURM Integration
 ~~~~~~~~~~~~~~~~~
@@ -164,13 +520,27 @@ slurm_orch.sh
 
 Wrapper script to run the orchestrator as a SLURM job.
 
+**SLURM Configuration:**
+
+.. code-block:: bash
+
+   #SBATCH --time=01:00:00
+   #SBATCH --partition=cpu
+   #SBATCH --nodes=1
+   #SBATCH --ntasks=32
+
+**Execution:**
+
 .. code-block:: bash
 
    sbatch slurm_orch.sh
 
-- Installs Python dependencies
-- Cleans previous output directory
-- Executes ``orch.py`` with the default recipe
+1. Load Python module
+2. Install dependencies from ``requirements.txt``
+3. Clean previous ``output/`` directory
+4. Execute ``python -u orch.py recipe_ex/inference_recipe.json "$@"``
+
+The ``-u`` flag enables unbuffered output for real-time logging.
 
 Recipe Configuration
 ~~~~~~~~~~~~~~~~~~~~
